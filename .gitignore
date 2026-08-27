@@ -11,3 +11,7 @@ test-results/
 .worktrees/
 .superpowers/
 /playwright-report/
+
+# Agent runtime + scratch
+.hermes/
+scratchpad/
