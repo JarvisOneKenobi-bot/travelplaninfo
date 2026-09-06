@@ -145,11 +145,11 @@ curl -s https://travelplaninfo.com/sitemap.xml | grep -c "<loc>"
 
 Non-English article canonical sample after D5 implementation:
 ```bash
-curl -sL https://travelplaninfo.com/es/key-west-florida-vacation-guide-2026/ | grep -i 'rel="canonical"'
+curl -sL https://travelplaninfo.com/es/key-west-florida-vacation-guide/ | grep -i 'rel="canonical"'
 ```
 
 Expected:
-- Canonical points to `https://travelplaninfo.com/key-west-florida-vacation-guide-2026/`.
+- Canonical points to `https://travelplaninfo.com/key-west-florida-vacation-guide/`.
 
 Auth noindex after Phase 4:
 ```bash
@@ -166,7 +166,7 @@ curl -sL https://travelplaninfo.com/hot-deals/ | grep -i 'rel="canonical"'
 
 Schema sample:
 ```bash
-curl -sL https://travelplaninfo.com/key-west-florida-vacation-guide-2026/ | grep -E 'FAQPage|BreadcrumbList|Article'
+curl -sL https://travelplaninfo.com/key-west-florida-vacation-guide/ | grep -E 'FAQPage|BreadcrumbList|Article'
 ```
 
 Acceptance:
@@ -240,7 +240,16 @@ Protect the working business floor:
 
 Suggested smoke URLs:
 ```bash
+# Redirect gate — old year-slugged URLs must 308 to the evergreen slug (page AND images)
 curl -I https://travelplaninfo.com/key-west-florida-vacation-guide-2026/
+# expect: HTTP/2 308 · location: /key-west-florida-vacation-guide/
+curl -I https://travelplaninfo.com/images/articles/key-west-florida-vacation-guide-2026/key-west-florida-vacation-guide-2026-hero.png
+# expect: HTTP/2 308 · location: /images/articles/key-west-florida-vacation-guide/key-west-florida-vacation-guide-hero.png
+curl -I https://travelplaninfo.com/images/articles/cape-cod-vacation-guide-2026/cape-cod-vacation-guide-2026-body-3.png
+# expect: HTTP/2 308 · location: /images/articles/cape-cod-vacation-guide/cape-cod-vacation-guide-body-3.png
+curl -I https://travelplaninfo.com/key-west-florida-vacation-guide/
+# expect: HTTP/2 200
+# Build host: `node --version` must be >= 22 (src/lib/slug-redirects.ts imports ../i18n/routing.ts)
 curl -I https://travelplaninfo.com/guides/
 curl -I https://travelplaninfo.com/planner/
 ```

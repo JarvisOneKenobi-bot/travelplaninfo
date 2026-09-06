@@ -45,8 +45,8 @@ Rendering:
 ## Required article shape example
 
 Current sample article evidence:
-- `content/articles/key-west-florida-vacation-guide-2026.json` includes `slug`, `title`, `excerpt`, HTML `content`, `featuredImage`, `categories`, `date`, `modified`, `seo`, `affiliateOpportunities`, `schemaType`, and `faq`.
-- `content/articles/asheville-north-carolina-vacation-guide-2026.json` follows the same shape.
+- `content/articles/key-west-florida-vacation-guide.json` includes `slug`, `title`, `excerpt`, HTML `content`, `featuredImage`, `categories`, `date`, `modified`, `seo`, `affiliateOpportunities`, `schemaType`, and `faq`.
+- `content/articles/asheville-north-carolina-vacation-guide.json` follows the same shape.
 
 Gap to close:
 - `search_location` is declared in `src/lib/articles.ts:20` but not present in the inspected sample files and was counted as 0/59 by the diagnosis. New articles must include it; existing articles need backfill.
