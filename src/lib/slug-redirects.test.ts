@@ -1,11 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { routing } from "../i18n/routing";
 import { buildSlugRedirects, PREFIXED_LOCALES, SLUG_RENAMES } from "./slug-redirects";
 
 describe("slug redirects", () => {
   it("contains the complete 24-article evergreen rename map", () => {
     expect(Object.keys(SLUG_RENAMES).length).toBe(24);
+  });
+
+  it("derives PREFIXED_LOCALES from routing (no hand copy)", () => {
+    const expected = routing.locales.filter((l) => l !== routing.defaultLocale);
+    expect([...PREFIXED_LOCALES]).toEqual(expected);
+    expect(PREFIXED_LOCALES).not.toContain(routing.defaultLocale);
+    expect(PREFIXED_LOCALES.length).toBe(routing.locales.length - 1);
   });
 
   it("maps each old slug to itself with only the trailing year stripped", () => {
