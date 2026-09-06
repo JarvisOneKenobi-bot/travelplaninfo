@@ -72,4 +72,52 @@ describe("withSponsoredRel", () => {
     }
     expect(anchors).toBeGreaterThanOrEqual(20); // 20 inline CJ anchors on 2026-09-06 (none carried rel); only grows
   });
+
+  it("does not corrupt a tag whose quoted attribute contains '>'", () => {
+    const input = `<a href="${CJ}" title="a > b">x</a>`;
+    expect(withSponsoredRel(input)).toBe(`<a href="${CJ}" title="a > b" rel="sponsored noopener noreferrer">x</a>`);
+  });
+
+  it("keeps the existing quote style when merging rel and stays idempotent", () => {
+    const input = `<a rel='nofollow' href="${CJ}">x</a>`;
+    const once = withSponsoredRel(input);
+    expect(once).toBe(`<a rel='nofollow sponsored noopener noreferrer' href="${CJ}">x</a>`);
+    expect(withSponsoredRel(once)).toBe(once);
+  });
+
+  it("treats rel='' as empty and fills it", () => {
+    expect(withSponsoredRel(`<a rel="" href="${CJ}">x</a>`)).toBe(`<a rel="sponsored noopener noreferrer" href="${CJ}">x</a>`);
+  });
+
+  it("handles a rel value containing the other quote character without duplicating rel", () => {
+    const doubleQuoted = `<a rel="foo'bar" href="${CJ}">x</a>`;
+    expect(withSponsoredRel(doubleQuoted)).toBe(`<a rel="foo'bar sponsored noopener noreferrer" href="${CJ}">x</a>`);
+    const singleQuoted = `<a rel='foo"bar' href="${CJ}">x</a>`;
+    expect(withSponsoredRel(singleQuoted)).toBe(`<a rel='foo"bar sponsored noopener noreferrer' href="${CJ}">x</a>`);
+    for (const input of [doubleQuoted, singleQuoted]) {
+      expect((withSponsoredRel(input).match(/rel\s*=/g) ?? []).length).toBe(1);
+    }
+  });
+
+  it("no corpus anchor relies on behaviour the tokenizer does not model (precondition ratchet)", () => {
+    const dir = path.join(process.cwd(), "content", "articles");
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
+    expect(files.length).toBeGreaterThan(0);
+    let naiveStarts = 0;
+    let recognised = 0;
+    for (const file of files) {
+      const { content } = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as { content: string };
+      naiveStarts += (content.match(/<a\b/gi) ?? []).length;
+      for (const tag of content.match(/<a\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi) ?? []) {
+        recognised += 1;
+        expect(tag).toMatch(/(?<![\w-])href\s*=\s*["']/); // no unquoted href
+      }
+    }
+    // Non-vacuous: there IS a population to police.
+    expect(naiveStarts).toBeGreaterThan(0);
+    // Independent of the tokenizer's own acceptance set: every `<a` start the corpus contains must
+    // be an opening tag the tokenizer actually models. A malformed or unsupported anchor would
+    // otherwise vanish from the test population instead of failing it.
+    expect(recognised).toBe(naiveStarts);
+  });
 });

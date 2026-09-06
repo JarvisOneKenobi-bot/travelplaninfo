@@ -26,7 +26,7 @@ export function isAffiliateHref(href: string): boolean {
   return AFFILIATE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
 }
 
-const ANCHOR_OPEN_TAG = /<a\b[^>]*>/gi;
+const ANCHOR_OPEN_TAG = /<a\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
 // (?<![\w-]) keeps data-href / data-rel from matching.
 const HREF_ATTR = /(?<![\w-])href\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
 const REL_ATTR = /(?<![\w-])rel\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
@@ -46,10 +46,11 @@ export function withSponsoredRel(html: string): string {
     if (!hrefValue || !isAffiliateHref(hrefValue)) return tag;
     const rel = REL_ATTR.exec(tag);
     if (rel) {
+      const q = rel[1] !== undefined ? '"' : "'";
       const current = rel[1] ?? rel[2];
       const merged = mergeRel(current);
       if (merged === current) return tag;
-      return tag.replace(REL_ATTR, `rel="${merged}"`);
+      return tag.replace(REL_ATTR, () => `rel=${q}${merged}${q}`);
     }
     return tag.replace(/\s*\/?>$/, (end) => ` rel="${AFFILIATE_REL}"${end.trimStart()}`);
   });
