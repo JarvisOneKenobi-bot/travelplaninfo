@@ -1,0 +1,75 @@
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { isAffiliateHref, withSponsoredRel } from "./affiliate-rel";
+
+const CJ = "https://www.jdoqocy.com/click-101692716-10790646?sid=travelplaninfo";
+
+describe("isAffiliateHref", () => {
+  it("matches CJ tracking domains and the publisher id", () => {
+    expect(isAffiliateHref(CJ)).toBe(true);
+    expect(isAffiliateHref("https://www.dpbolvw.net/click-101692716-1?sid=x")).toBe(true);
+    expect(isAffiliateHref("https://www.tkqlhce.com/click-101692716-1")).toBe(true);
+    expect(isAffiliateHref("https://www.anrdoezrs.net/links/101692716/type/dlg/https://example.com")).toBe(true);
+    expect(isAffiliateHref("https://example.com/click-101692716-1")).toBe(true);
+    expect(isAffiliateHref("https://example.com/page")).toBe(false);
+    expect(isAffiliateHref("/images/articles/x/y.png")).toBe(false);
+  });
+});
+
+describe("withSponsoredRel", () => {
+  it("adds the full rel set to an affiliate anchor with no rel", () => {
+    const input = `<p>Try <a href="${CJ}">Vrbo</a> today.</p>`;
+    expect(withSponsoredRel(input)).toBe(
+      `<p>Try <a href="${CJ}" rel="sponsored noopener noreferrer">Vrbo</a> today.</p>`,
+    );
+  });
+
+  it("merges with an existing rel without duplicating tokens", () => {
+    const input = `<a rel="nofollow" href="${CJ}">x</a>`;
+    expect(withSponsoredRel(input)).toBe(`<a rel="nofollow sponsored noopener noreferrer" href="${CJ}">x</a>`);
+  });
+
+  it("leaves an anchor that already has every token byte-identical", () => {
+    const input = `<a href="${CJ}" rel="sponsored noopener noreferrer" target="_blank">x</a>`;
+    expect(withSponsoredRel(input)).toBe(input);
+  });
+
+  it("leaves non-affiliate anchors untouched", () => {
+    const input = `<a href="https://example.com/">x</a> <a href='/guides/'>y</a>`;
+    expect(withSponsoredRel(input)).toBe(input);
+  });
+
+  it("ignores data-href and data-rel attributes", () => {
+    const input = `<a data-href="${CJ}" href="/local/">x</a>`;
+    expect(withSponsoredRel(input)).toBe(input);
+    const withDataRel = `<a data-rel="x" href="${CJ}">y</a>`;
+    expect(withSponsoredRel(withDataRel)).toBe(`<a data-rel="x" href="${CJ}" rel="sponsored noopener noreferrer">y</a>`);
+  });
+
+  it("handles single-quoted hrefs", () => {
+    const input = `<a href='${CJ}'>x</a>`;
+    expect(withSponsoredRel(input)).toBe(`<a href='${CJ}' rel="sponsored noopener noreferrer">x</a>`);
+  });
+
+  it("is idempotent", () => {
+    const once = withSponsoredRel(`<a href="${CJ}">x</a><a rel="nofollow" href="${CJ}">y</a>`);
+    expect(withSponsoredRel(once)).toBe(once);
+  });
+
+  it("covers every inline CJ anchor in the live corpus (ratchet)", () => {
+    const dir = path.join(process.cwd(), "content", "articles");
+    let anchors = 0;
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".json"))) {
+      const article = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as { content: string };
+      const rendered = withSponsoredRel(article.content);
+      for (const tag of rendered.match(/<a\b[^>]*click-101692716[^>]*>/gi) ?? []) {
+        anchors += 1;
+        expect(tag).toMatch(/(?<![\w-])rel=["'][^"']*\bsponsored\b/);
+        expect(tag).toMatch(/\bnoopener\b/);
+        expect(tag).toMatch(/\bnoreferrer\b/);
+      }
+    }
+    expect(anchors).toBeGreaterThanOrEqual(20); // 20 inline CJ anchors on 2026-09-06 (none carried rel); only grows
+  });
+});

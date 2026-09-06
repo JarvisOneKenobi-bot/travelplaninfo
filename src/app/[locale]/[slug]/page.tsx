@@ -13,6 +13,7 @@ import AffiliateInlineCTA from "@/components/AffiliateInlineCTA";
 import ArticleAffiliateCTA from "@/components/ArticleAffiliateCTA";
 import FAQAccordion from "@/components/FAQAccordion";
 import { getAllArticles, getArticle } from "@/lib/articles";
+import { withSponsoredRel } from "@/lib/affiliate-rel";
 import { routing } from "@/i18n/routing";
 
 function stripH1(html: string): string {
@@ -212,7 +213,7 @@ export default async function LocaleArticlePage({ params }: Props) {
                 prose-code:text-orange-600 prose-code:bg-orange-50 prose-code:px-2 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
                 prose-hr:border-gray-200"
             >
-              {splitByH2(post.content).map((section, i) => (
+              {splitByH2(withSponsoredRel(post.content)).map((section, i) => (
                 <Fragment key={i}>
                   <div dangerouslySetInnerHTML={{ __html: section }} />
                   {post.affiliateOpportunities.length > 0 && i > 0 && i % 2 === 0 && (
