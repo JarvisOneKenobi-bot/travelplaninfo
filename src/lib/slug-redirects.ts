@@ -44,6 +44,43 @@ export interface SlugRedirect {
   permanent: boolean;
 }
 
+/**
+ * Image URLs renamed in 8655f8b: the directory changed for all 24 renames, and
+ * every basename that started with the old slug (hero + body-N) was prefix-swapped
+ * to the new slug. Rule 1 handles those (`:tail` is one path segment, so it matches
+ * `hero.png` and `body-10.png`); rule 2 catches every other basename. Rule 1 must
+ * come first or `:path*` would send `<old>-hero.png` to `<new>/<old>-hero.png`.
+ * Next.js evaluates redirects() before `public/` and before middleware, so the
+ * `*.png` middleware exclusion does not matter here.
+ */
+export function buildImageRedirects(oldSlug: string, newSlug: string): SlugRedirect[] {
+  return [
+    {
+      source: `/images/articles/${oldSlug}/${oldSlug}-:tail`,
+      destination: `/images/articles/${newSlug}/${newSlug}-:tail`,
+      permanent: true,
+    },
+    {
+      source: `/images/articles/${oldSlug}/:path*`,
+      destination: `/images/articles/${newSlug}/:path*`,
+      permanent: true,
+    },
+  ];
+}
+
+/** Test helper: apply the two image rules to one URL the way Next would (first match wins). */
+export function resolveImageRedirect(url: string): string | null {
+  const match = /^\/images\/articles\/([^/]+)\/([^/]+)$/.exec(url);
+  if (!match) return null;
+  const [, oldSlug, basename] = match;
+  const newSlug = SLUG_RENAMES[oldSlug];
+  if (!newSlug) return null;
+  if (basename.startsWith(`${oldSlug}-`)) {
+    return `/images/articles/${newSlug}/${newSlug}-${basename.slice(oldSlug.length + 1)}`;
+  }
+  return `/images/articles/${newSlug}/${basename}`;
+}
+
 export function buildSlugRedirects(): SlugRedirect[] {
   return Object.entries(SLUG_RENAMES).flatMap(([oldSlug, newSlug]) => [
     { source: `/${oldSlug}/`, destination: `/${newSlug}/`, permanent: true },
@@ -52,5 +89,6 @@ export function buildSlugRedirects(): SlugRedirect[] {
       destination: `/${locale}/${newSlug}/`,
       permanent: true,
     })),
+    ...buildImageRedirects(oldSlug, newSlug),
   ]);
 }
