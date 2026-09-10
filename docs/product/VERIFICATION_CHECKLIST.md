@@ -263,7 +263,24 @@ Append one row to a deploy/audit note for each production deployment.
 | YYYY-MM-DD | `<sha>` | Phase N | command + result | JSON/result | URL/result | pass/fail | pass/fail | name/model |
 | 2026-09-09 | `7d9ccb5` | M51 evergreen-slug remediation | vitest 375/375 · tsc 0 · build 0 · pytest 1117 pass /1 known pre-existing fail (`test_no_live_tree_import_shadow`, worktree-only since `d104bc8`) · slug_guard PASS 59 articles/192 redirects/24 renames | VPS `74c93b6`→`7d9ccb5`, `npm run build` + `pm2 restart tpi` clean; pm2 online | redirect gate **cache-busted, `cf-cache-status: BYPASS` on every check**: `/key-west-…-2026/`→308→200, hero→308, cape-cod body-3→308, `/`, `/guides/`, `/planner/`, `/destinations/`, `/hot-deals/`, dest article all 200 | not run | not run | Claude Opus 5 (Jose approved deploy; Jose ran the script and purged Cloudflare) |
 
+| 2026-09-10 | `e0095d2` | internal-link integrity (T6b/T6/T5) | TPI: `npm run build` exit 0 / 441 pages · vitest 375/375 (39 files; Playwright e2e skipped — browser binary absent) · JP: pytest 1183 passed /1 known pre-existing fail (`test_no_live_tree_import_shadow`) · sweep 118→0 · slug_guard R7 **118 findings on the pre-repair tree (stash), 0 after** | VPS `7d9ccb5`→`e0095d2`, build clean, pm2 `tpi` online | redirect gate 7/7 PASS, every check `cf-cache-status: BYPASS` | not run | not run | Claude Opus 5 (Jose approved push + deploy; Jose ran the script and purged Cloudflare) |
+
 No row means no deploy sign-off.
+
+⚠ **Content-gate lesson, 2026-09-10.** For months, 35 of 59 articles served **118 dead or
+literal-rendering internal links** — 94 of them visible as raw `[text](/path/)` markup in body copy.
+**Every gate in the deploy script passed throughout**, because all of them were status-only and the
+broken pages returned `200` the entire time. A gate that asks "did it load" cannot see wrong content.
+`~/deploy-tpi.sh` now carries `chk_body()`, which asserts **zero** literal-rendering link forms in the
+served HTML, cache-busted with `cf-cache-status` asserted like every other check.
+
+⚠ **Measurement lesson, same date.** Four successive sweeps reported 24 → 80 → 90 → 111 links and each
+was described as comprehensive. One defect caused all four: they scanned `json.dumps(doc)`, which
+escapes `"` to `\"`, so `<a href="/x/">` became `href=\"/x/\"` and no `href="` pattern matched. Only
+**single-quoted** hrefs survived (7 of 45 corpus-wide), making a corpus-wide defect look like a
+three-link curiosity. **Scan parsed string values, never a re-serialised blob.** A fifth form
+(schemeless `travelplaninfo.com/path/`) was found only by a second, independently written scanner —
+the two now agree on all 118 pairs, 0 delta both directions.
 
 ⚠ **Deploy-gate lesson, 2026-09-09.** The first run of the deploy script reported `FAIL 503` on all
 three redirect checks and exited 13. The deploy was fine — the gate curled immediately after
