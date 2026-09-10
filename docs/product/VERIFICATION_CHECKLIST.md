@@ -261,5 +261,15 @@ Append one row to a deploy/audit note for each production deployment.
 | Date | Branch/SHA | Phase | Local gates | Prod health | SEO sample | Atlas smoke | Analytics/click check | Signed off by |
 |---|---|---|---|---|---|---|---|---|
 | YYYY-MM-DD | `<sha>` | Phase N | command + result | JSON/result | URL/result | pass/fail | pass/fail | name/model |
+| 2026-09-09 | `7d9ccb5` | M51 evergreen-slug remediation | vitest 375/375 · tsc 0 · build 0 · pytest 1117 pass /1 known pre-existing fail (`test_no_live_tree_import_shadow`, worktree-only since `d104bc8`) · slug_guard PASS 59 articles/192 redirects/24 renames | VPS `74c93b6`→`7d9ccb5`, `npm run build` + `pm2 restart tpi` clean; pm2 online | redirect gate **cache-busted, `cf-cache-status: BYPASS` on every check**: `/key-west-…-2026/`→308→200, hero→308, cape-cod body-3→308, `/`, `/guides/`, `/planner/`, `/destinations/`, `/hot-deals/`, dest article all 200 | not run | not run | Claude Opus 5 (Jose approved deploy; Jose ran the script and purged Cloudflare) |
 
 No row means no deploy sign-off.
+
+⚠ **Deploy-gate lesson, 2026-09-09.** The first run of the deploy script reported `FAIL 503` on all
+three redirect checks and exited 13. The deploy was fine — the gate curled immediately after
+`pm2 restart tpi`, while Next was still booting (pm2 showed `0s` uptime). The dangerous part is *why it
+looked partially healthy*: the four checks that PASSED in that same run were **Cloudflare cache hits**,
+so a stale-cache pass masqueraded as "site up, redirects broken".
+A gate a cache can satisfy is not a gate. `~/deploy-tpi.sh` now (a) polls the origin until it serves
+before gating, and (b) cache-busts every check **and asserts `cf-cache-status` is BYPASS/MISS/DYNAMIC**.
+Keep both properties in any future deploy gate.
