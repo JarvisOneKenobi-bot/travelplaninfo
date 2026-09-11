@@ -21,7 +21,7 @@ const BUBBLE_MESSAGES: BubbleMessage[] = [
   { id: 'planner-budget', text: "Tip: toggle 'Let Atlas find the cheapest dates' and I'll do the date math for you", context: 'planner' },
   // Itinerary page
   { id: 'itinerary-empty', text: "Your itinerary looks empty — want me to suggest some activities?", context: 'itinerary' },
-  { id: 'itinerary-idle', text: "Need a hand? I can search flights, hotels, or activities for you", context: 'itinerary' },
+  { id: 'itinerary-idle', text: "Need a hand? I can search flights or point you to the right guide", context: 'itinerary' },
   { id: 'itinerary-interests', text: "Tap the mic and tell me what you're into — it's faster!", context: 'itinerary' },
 ];
 

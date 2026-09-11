@@ -34,14 +34,12 @@ export const HELP_CONTENT: Record<string, HelpPageContent> = {
     title: "Your Trip Itinerary",
     intro: "Build your day-by-day travel plan with Atlas, your AI travel concierge.",
     sections: [
-      { heading: "Auto-search", text: "When you first create a trip, Atlas automatically searches for flights, hotels, and activities. Results appear in a modal where you can compare, select, and add items to your itinerary in bulk." },
-      { heading: "Adding items", text: "Click '+ Add Item' on any day to add flights, hotels, activities, dining, restaurants, or transportation. In the chat, Atlas searches live flights and deals for you. For hotels, dining, and activities, Atlas gives practical guidance — neighborhoods, price expectations, what to look for — plus a trusted partner search link, rather than inventing specific listings or prices." },
-      { heading: "Trip Results Modal", text: "The results modal has tabs for Flights, Hotels, Activities, Restaurants, and a Summary. Each tab lets you sort, select items with checkboxes, and pick which day to assign them to. Click 'Add All to Itinerary' to batch-add your selections." },
-      { heading: "Day assignment", text: "Every item in the results modal has a 'Day' dropdown — flights, hotels, activities, and restaurants can all be assigned to specific days before adding to the itinerary." },
-      { heading: "Activities & Interests", text: "When you select 'Activity', you'll see your interests as sub-categories. Atlas uses these to suggest relevant activities. If you haven't set interests yet, you'll be prompted to choose some." },
-      { heading: "Editing items", text: "Click on any item to edit its title, description, or budget tier. Changes save instantly." },
+      { heading: "Getting started", text: "Your itinerary opens with a placeholder row per day. Atlas does not search on its own — ask it in chat, or add items yourself." },
+      { heading: "Adding items", text: "Click '+ Add Item' on any day to add flights, hotels, activities, dining, restaurants, or transportation. Click an item to edit its title, description, or budget tier. Changes save instantly." },
+      { heading: "Flight search", text: "Ask for flights in chat and Atlas searches live flight prices for your route and dates. Results open in a window where you can sort, pick flights, assign each one to a day, and add them to the itinerary in one go." },
+      { heading: "Hotels, activities, restaurants", text: "Atlas does not have live inventory for these. It gives practical guidance — neighborhoods, price expectations, what to look for — and a trusted partner search link. It never invents listings or prices." },
       { heading: "Estimated prices", text: "When live pricing isn't available, Atlas shows estimated prices marked with '(estimated)'. These are ballpark figures to help you plan — actual prices may vary." },
-      { heading: "Atlas chat", text: "Ask Atlas anything about your trip — live flight searches, current deals, and TPI destination guides. For hotels, restaurants, and activities, Atlas shares honest guidance with a partner search link instead of made-up listings. Atlas knows what's already in your itinerary and suggests complementary ideas. If Atlas reaches its monthly usage limit, it pauses until next month and says so honestly." },
+      { heading: "Atlas chat", text: "Ask Atlas anything about your trip — Atlas searches live flight prices, current flight deals, TPI destination guides, and surprise destination ideas. Atlas knows what's already in your itinerary and suggests complementary ideas. If Atlas reaches its monthly usage limit, it pauses until next month and says so honestly." },
       { heading: "When nothing matches", text: "If no destination fits every vibe you picked, Atlas says so honestly and offers real ways forward: match any of your vibes instead of all of them, try a different month, or ask Atlas in chat — it already knows your starting city, month, and vibes. Atlas never fills the gap with made-up destinations or prices." },
       { heading: "Recommended Bookings", text: "The right sidebar shows affiliate booking links matched to your destination. Click 'Find Hotels' or 'Search Flights' to compare prices, or '+ Add to Itinerary' to add directly to your plan." },
       { heading: "Days", text: "Click the day header to collapse/expand. Click '+ Add Day' to extend your trip. Days are auto-calculated from your travel dates." },
@@ -70,7 +68,7 @@ export const HELP_CONTENT: Record<string, HelpPageContent> = {
     title: "Travel Guides",
     intro: "Browse our collection of destination guides and travel tips.",
     sections: [
-      { heading: "Finding articles", text: "Articles are organized by destination and topic. Each guide includes practical tips, current prices, and booking links." },
+      { heading: "Finding articles", text: "Articles are organized by destination and topic. Each guide includes practical tips and booking links." },
     ]
   },
   "hot-deals": {

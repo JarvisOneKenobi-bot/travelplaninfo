@@ -73,6 +73,19 @@ export const TOOLS: Tool[] = [
   },
 ];
 
+/**
+ * Human-facing domain of each live tool. help-content.guard.test.ts derives the
+ * set of things help copy may say "Atlas searches" from THIS map, so removing a
+ * tool without updating help copy fails the build instead of shipping a promise
+ * the assistant cannot keep.
+ */
+export const TOOL_DOMAIN: Record<string, string> = {
+  search_flights: "flight",
+  get_deals: "deal",
+  get_article: "guide",
+  surprise_me: "destination",
+};
+
 type ToolInput = Record<string, unknown>;
 
 export interface RunAtlasTurnParams {
