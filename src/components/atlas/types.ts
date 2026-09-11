@@ -15,40 +15,17 @@ export interface FlightResult {
   book_url: string;
 }
 
-/** Extends HotelData from HotelCard with total cost + nights */
-export interface HotelResult {
-  name: string;
-  price_night: string;     // display string
-  price_night_value: number; // numeric for sorting
-  total_cost?: string;     // price_night * nights (display)
-  rating: number;          // 1-5 for sort and star rendering
-  tier: "budget" | "mid" | "luxury";
-  book_url: string;
-  neighborhood?: string;
-  highlights?: string[];
-}
-
-/** Extends ActivityData from ActivityCard with per-person price */
-export interface ActivityResult {
-  name: string;
-  price: string;           // display string, e.g. "$89/person"
-  price_value: number;     // numeric for sorting
-  tier: "budget" | "mid" | "luxury";
-  interest: string;        // category grouping key
-  duration?: string;
-  klook_url?: string;
-}
-
-/** Extends RestaurantCard data with budget tier */
-export interface RestaurantResult {
-  name: string;
-  cuisine: string;
-  price_range: string;      // "$", "$$", "$$$"
-  neighborhood: string;
-  rating?: number;           // 1-5
-  highlights: string[];      // e.g. ["outdoor seating", "live music"]
-  budget_tier: BudgetTier;
-}
-
 /** Budget tier type reused across modal and chat */
 export type BudgetTier = "budget" | "mid" | "luxury";
+
+/**
+ * Sentinel `price_value` for a flight whose price is unknown. The producer emits
+ * "—" (NO_PRICE_LABEL) whenever the upstream price is null or <= 0 and sends no
+ * price_value, so parsing yields 0 — which would sort the row FIRST, hand it the
+ * "Best Price" badge and render a $0 estimated total. Unknown sorts last and is
+ * excluded from every cheapest/total calculation.
+ */
+export const PRICE_UNKNOWN = Number.MAX_SAFE_INTEGER;
+
+/** Sentinel `duration_minutes` for a flight whose duration is unknown. Sorts last. */
+export const DURATION_UNKNOWN = Number.MAX_SAFE_INTEGER;

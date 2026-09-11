@@ -167,3 +167,19 @@ describe("dead entry-system stays dead", () => {
     expect(offenders, "rejected entry-system components must not reappear").toEqual([]);
   });
 });
+
+describe("AssistantChat fabrication tripwire", () => {
+  const file = "src/components/AssistantChat.tsx";
+  const content = readFileSync(resolve(process.cwd(), file), "utf-8");
+
+  it("never substitutes a made-up flight duration", () => {
+    expect(content).not.toContain('"0h 0m"');
+  });
+
+  it("only treats live tools as trip tools", () => {
+    expect(content).toMatch(/TRIP_TOOLS = new Set\(\["search_flights"\]\)/);
+    for (const dead of ["search_hotels", "search_activities", "search_restaurants"]) {
+      expect(content, `${file} still references ${dead}`).not.toContain(dead);
+    }
+  });
+});

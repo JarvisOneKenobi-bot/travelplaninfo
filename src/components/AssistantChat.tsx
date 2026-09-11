@@ -11,18 +11,19 @@ import { buildOnboardingIntro, readGuestPrefs } from "@/lib/guest-prefs";
 import AtlasSmartSearchChip from "./AtlasSmartSearchChip";
 import VoiceInput from "./VoiceInput";
 import FlightCard from "./atlas/FlightCard";
-import HotelCard from "./atlas/HotelCard";
 import DealCard from "./atlas/DealCard";
 import DestinationCard from "./atlas/DestinationCard";
 import ArticleCard from "./atlas/ArticleCard";
-import ActivityCard from "./atlas/ActivityCard";
-import RestaurantCard from "./atlas/RestaurantCard";
 import TripResultsModal from "./atlas/TripResultsModal";
-import type { FlightResult, HotelResult, ActivityResult, RestaurantResult, BudgetTier } from "./atlas/types";
+import type { FlightResult, BudgetTier } from "./atlas/types";
+import { PRICE_UNKNOWN, DURATION_UNKNOWN } from "./atlas/types";
 
-// ── Trip tool detection — only these tools trigger the modal ─────────────────
+// ── Trip tools ───────────────────────────────────────────────────────────────
+// Results from these tools are collected into the results window rather than
+// rendered as inline cards. Opening the window is gated on usable results (see
+// `hasTripResults`), not on this set.
 
-const TRIP_TOOLS = new Set(["search_flights", "search_hotels", "search_activities", "search_restaurants"]);
+const TRIP_TOOLS = new Set(["search_flights"]);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,9 +58,6 @@ interface TripContext {
 
 interface ModalData {
   flights: FlightResult[];
-  hotels: HotelResult[];
-  activities: ActivityResult[];
-  restaurants: RestaurantResult[];
   tripContext: TripContext;
 }
 
@@ -148,44 +146,35 @@ function parseDurationMinutes(durationStr: string): number {
   return (hMatch ? parseInt(hMatch[1]) * 60 : 0) + (mMatch ? parseInt(mMatch[1]) : 0);
 }
 
-/** Count how many trip-specific tools appear in parsed parts */
-function countTripTools(parts: ToolResult[]): number {
-  const seen = new Set<string>();
-  for (const p of parts) {
-    if (p.type === "tool" && p.toolName && TRIP_TOOLS.has(p.toolName)) {
-      seen.add(p.toolName);
-    }
-  }
-  return seen.size;
-}
-
 /** Extract typed arrays from parsed tool results */
-function extractTripData(parts: ToolResult[]): {
+export function extractTripData(parts: ToolResult[]): {
   flights: FlightResult[];
-  hotels: HotelResult[];
-  activities: ActivityResult[];
-  restaurants: RestaurantResult[];
 } {
   const flights: FlightResult[] = [];
-  const hotels: HotelResult[] = [];
-  const activities: ActivityResult[] = [];
-  const restaurants: RestaurantResult[] = [];
 
   for (const p of parts) {
     if (p.type !== "tool" || !p.data) continue;
 
     if (p.toolName === "search_flights" && Array.isArray(p.data.flights)) {
       for (const f of p.data.flights as Record<string, unknown>[]) {
-        const price = String(f.price || "$0");
-        const duration = String(f.duration || "0h 0m");
+        const priceRaw = typeof f.price === "string" ? f.price.trim() : "";
+        const price = priceRaw || "price unavailable";
+        const durationRaw = typeof f.duration === "string" ? f.duration.trim() : "";
+        const duration = durationRaw || "duration unavailable";
         const stops = String(f.stops || "");
+        const parsedPrice = typeof f.price_value === "number" ? f.price_value : parsePriceValue(price);
         flights.push({
           airline: String(f.airline || ""),
           route: String(f.route || ""),
           price,
-          price_value: typeof f.price_value === "number" ? f.price_value : parsePriceValue(price),
+          price_value: parsedPrice > 0 ? parsedPrice : PRICE_UNKNOWN,
           duration,
-          duration_minutes: typeof f.duration_minutes === "number" ? f.duration_minutes : parseDurationMinutes(duration),
+          duration_minutes:
+            typeof f.duration_minutes === "number"
+              ? f.duration_minutes
+              : durationRaw
+                ? parseDurationMinutes(durationRaw)
+                : DURATION_UNKNOWN,
           stops,
           nonstop: typeof f.nonstop === "boolean" ? f.nonstop : /nonstop/i.test(stops),
           depart_date: f.depart_date ? String(f.depart_date) : undefined,
@@ -195,54 +184,9 @@ function extractTripData(parts: ToolResult[]): {
       }
     }
 
-    if (p.toolName === "search_hotels" && Array.isArray(p.data.hotels)) {
-      for (const h of p.data.hotels as Record<string, unknown>[]) {
-        const priceNight = String(h.price_night || "$0");
-        hotels.push({
-          name: String(h.name || ""),
-          price_night: priceNight,
-          price_night_value: typeof h.price_night_value === "number" ? h.price_night_value : parsePriceValue(priceNight),
-          total_cost: h.total_cost ? String(h.total_cost) : undefined,
-          rating: typeof h.rating === "number" ? h.rating : 0,
-          tier: (["budget", "mid", "luxury"].includes(String(h.tier)) ? String(h.tier) : "mid") as "budget" | "mid" | "luxury",
-          book_url: String(h.book_url || ""),
-          neighborhood: h.neighborhood ? String(h.neighborhood) : undefined,
-          highlights: Array.isArray(h.highlights) ? (h.highlights as unknown[]).map(String) : undefined,
-        });
-      }
-    }
-
-    if (p.toolName === "search_activities" && Array.isArray(p.data.activities)) {
-      for (const a of p.data.activities as Record<string, unknown>[]) {
-        const price = String(a.price || "$0");
-        activities.push({
-          name: String(a.name || ""),
-          price,
-          price_value: typeof a.price_value === "number" ? a.price_value : parsePriceValue(price),
-          tier: (["budget", "mid", "luxury"].includes(String(a.tier)) ? String(a.tier) : "mid") as "budget" | "mid" | "luxury",
-          interest: String(a.interest || "other"),
-          duration: a.duration ? String(a.duration) : undefined,
-          klook_url: a.klook_url ? String(a.klook_url) : undefined,
-        });
-      }
-    }
-
-    if (p.toolName === "search_restaurants" && Array.isArray(p.data.restaurants)) {
-      for (const r of p.data.restaurants as Record<string, unknown>[]) {
-        restaurants.push({
-          name: String(r.name || ""),
-          cuisine: String(r.cuisine || ""),
-          price_range: String(r.price_range || "$"),
-          neighborhood: String(r.neighborhood || ""),
-          rating: typeof r.rating === "number" ? r.rating : undefined,
-          highlights: Array.isArray(r.highlights) ? (r.highlights as unknown[]).map(String) : [],
-          budget_tier: (["budget", "mid", "luxury"].includes(String(r.budget_tier)) ? String(r.budget_tier) : "mid") as BudgetTier,
-        });
-      }
-    }
   }
 
-  return { flights, hotels, activities, restaurants };
+  return { flights };
 }
 
 /** Read trip context from the #atlas-trip-context script tag */
@@ -308,17 +252,6 @@ function ToolResultCards({ toolName, data }: { toolName: string; data: Record<st
     );
   }
 
-  if (toolName === "search_hotels" && data.hotels) {
-    const hotels = data.hotels as Array<Record<string, unknown>>;
-    return (
-      <div className="space-y-2 my-2">
-        {hotels.map((h, i) => (
-          <HotelCard key={i} hotel={h as never} />
-        ))}
-      </div>
-    );
-  }
-
   if (toolName === "get_deals" && data.deals) {
     const deals = data.deals as Array<Record<string, unknown>>;
     return (
@@ -347,28 +280,6 @@ function ToolResultCards({ toolName, data }: { toolName: string; data: Record<st
       <div className="space-y-2 my-2">
         {articles.map((a, i) => (
           <ArticleCard key={i} article={a as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "search_activities" && data.activities) {
-    const activities = data.activities as Array<Record<string, string>>;
-    return (
-      <div className="space-y-2 my-2">
-        {activities.map((a, i) => (
-          <ActivityCard key={i} activity={a as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "search_restaurants" && data.restaurants) {
-    const restaurants = data.restaurants as Array<Record<string, unknown>>;
-    return (
-      <div className="space-y-2 my-2">
-        {restaurants.map((r, i) => (
-          <RestaurantCard key={i} restaurant={r as never} />
         ))}
       </div>
     );
@@ -1061,10 +972,10 @@ export default function AssistantChat() {
             )}
 
             {messages.map((msg) => {
-              // ── Multi-tool trip detection (assistant messages only) ──
               const parsed = msg.role === "assistant" ? parseMessageContent(msg.content) : [];
-              const tripToolCount = msg.role === "assistant" ? countTripTools(parsed) : 0;
-              const isMultiTripTool = tripToolCount >= 2;
+              // Gate on usable results, not tool count: empty/error flight searches cannot open a plan.
+              const tripFlights = msg.role === "assistant" ? extractTripData(parsed).flights : [];
+              const hasTripResults = tripFlights.length > 0;
 
               return (
                 <div
@@ -1084,7 +995,7 @@ export default function AssistantChat() {
                   >
                     {msg.role === "assistant" ? (
                       <div>
-                        {isMultiTripTool ? (
+                        {hasTripResults ? (
                           <>
                             {/* Show text summary only (strip tool JSON) */}
                             {(() => {
@@ -1117,15 +1028,8 @@ export default function AssistantChat() {
                             {!msg.isStreaming && (
                               <button
                                 onClick={() => {
-                                  const tripData = extractTripData(parsed);
                                   const ctx = readTripContext();
-                                  setModalData({
-                                    flights: tripData.flights,
-                                    hotels: tripData.hotels,
-                                    activities: tripData.activities,
-                                    restaurants: tripData.restaurants,
-                                    tripContext: ctx,
-                                  });
+                                  setModalData({ flights: tripFlights, tripContext: ctx });
                                   setModalOpen(true);
                                 }}
                                 className="mt-3 w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors"
@@ -1140,7 +1044,7 @@ export default function AssistantChat() {
                             )}
                           </>
                         ) : (
-                          /* Standard rendering: inline cards for single-tool or non-trip tools */
+                          /* Standard rendering for messages without usable flight results */
                           parsed.map((part, i) => {
                             if (part.type === "tool" && part.toolName && part.data) {
                               return (
@@ -1334,8 +1238,9 @@ export default function AssistantChat() {
 
               {messages.map((msg) => {
                 const parsed = msg.role === "assistant" ? parseMessageContent(msg.content) : [];
-                const tripToolCount = msg.role === "assistant" ? countTripTools(parsed) : 0;
-                const isMultiTripTool = tripToolCount >= 2;
+                // Gate on usable results, not tool count: empty/error flight searches cannot open a plan.
+                const tripFlights = msg.role === "assistant" ? extractTripData(parsed).flights : [];
+                const hasTripResults = tripFlights.length > 0;
 
                 return (
                   <div
@@ -1355,7 +1260,7 @@ export default function AssistantChat() {
                     >
                       {msg.role === "assistant" ? (
                         <div>
-                          {isMultiTripTool ? (
+                          {hasTripResults ? (
                             <>
                               {(() => {
                                 const summary = getTextSummary(parsed);
@@ -1387,15 +1292,8 @@ export default function AssistantChat() {
                               {!msg.isStreaming && (
                                 <button
                                   onClick={() => {
-                                    const tripData = extractTripData(parsed);
                                     const ctx = readTripContext();
-                                    setModalData({
-                                      flights: tripData.flights,
-                                      hotels: tripData.hotels,
-                                      activities: tripData.activities,
-                                      restaurants: tripData.restaurants,
-                                      tripContext: ctx,
-                                    });
+                                    setModalData({ flights: tripFlights, tripContext: ctx });
                                     setModalOpen(true);
                                   }}
                                   className="mt-4 w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-colors"
@@ -1497,19 +1395,19 @@ export default function AssistantChat() {
             {/* Right Sidebar: Trip Cards */}
             <div className="w-96 border-l border-gray-200 overflow-y-auto bg-gray-50 p-5 flex flex-col gap-4 shrink-0">
               {(() => {
-                let allTrips = { flights: [] as FlightResult[], hotels: [] as HotelResult[], activities: [] as ActivityResult[], restaurants: [] as RestaurantResult[] };
+                let allTrips = { flights: [] as FlightResult[] };
                 for (const msg of [...messages].reverse()) {
                   if (msg.role === "assistant") {
                     const parsed = parseMessageContent(msg.content);
                     const tripData = extractTripData(parsed);
-                    if (tripData.flights.length > 0 || tripData.hotels.length > 0 || tripData.activities.length > 0 || tripData.restaurants.length > 0) {
+                    if (tripData.flights.length > 0) {
                       allTrips = tripData;
                       break;
                     }
                   }
                 }
 
-                if (allTrips.flights.length === 0 && allTrips.hotels.length === 0 && allTrips.activities.length === 0 && allTrips.restaurants.length === 0) {
+                if (allTrips.flights.length === 0) {
                   return (
                     <div className="text-center text-gray-400 text-sm py-12">
                       <p className="text-3xl mb-3">📋</p>
@@ -1535,52 +1433,6 @@ export default function AssistantChat() {
                         </div>
                       </div>
                     )}
-
-                    {allTrips.hotels.length > 0 && (
-                      <div>
-                        <h3 className="font-bold text-gray-900 mb-3">🏨 Hotels ({allTrips.hotels.length})</h3>
-                        <div className="space-y-2">
-                          {allTrips.hotels.map((h, i) => (
-                            <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
-                              <p className="font-bold text-orange-600 text-lg">{h.price_night}</p>
-                              <p className="text-xs font-medium text-gray-900">{h.name}</p>
-                              <p className="text-xs text-gray-500 mt-1">{h.neighborhood || ""}</p>
-                              {h.rating > 0 && <p className="text-xs text-amber-600 mt-1">⭐ {h.rating.toFixed(1)}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {allTrips.activities.length > 0 && (
-                      <div>
-                        <h3 className="font-bold text-gray-900 mb-3">🎯 Activities ({allTrips.activities.length})</h3>
-                        <div className="space-y-2">
-                          {allTrips.activities.map((a, i) => (
-                            <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
-                              <p className="font-bold text-orange-600 text-lg">{a.price}</p>
-                              <p className="text-xs font-medium text-gray-900">{a.name}</p>
-                              <p className="text-xs text-gray-500 mt-1">{a.duration || ""}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {allTrips.restaurants.length > 0 && (
-                      <div>
-                        <h3 className="font-bold text-gray-900 mb-3">🍽️ Restaurants ({allTrips.restaurants.length})</h3>
-                        <div className="space-y-2">
-                          {allTrips.restaurants.map((r, i) => (
-                            <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
-                              <p className="text-xs font-medium text-gray-900">{r.name}</p>
-                              <p className="text-xs text-gray-500">{r.cuisine} · {r.price_range}</p>
-                              {r.rating && <p className="text-xs text-amber-600 mt-1">⭐ {r.rating.toFixed(1)}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </>
                 );
               })()}
@@ -1598,9 +1450,6 @@ export default function AssistantChat() {
           dates={modalData.tripContext.dates}
           adults={modalData.tripContext.adults}
           flights={modalData.flights}
-          hotels={modalData.hotels}
-          activities={modalData.activities}
-          restaurants={modalData?.restaurants || []}
           budgetTier={modalData.tripContext.budgetTier}
           tripId={modalData.tripContext.tripId}
         />

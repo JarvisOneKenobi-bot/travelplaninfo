@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import type { FlightResult, HotelResult, ActivityResult, RestaurantResult, BudgetTier } from "./types";
+import { PRICE_UNKNOWN } from "./types";
+import type { FlightResult, BudgetTier } from "./types";
 
 // ── Budget tier badge colors (consistent with ItineraryBuilder) ─────────────
 
@@ -29,7 +30,7 @@ function joinNonEmpty(parts: string[], separator: string): string {
 
 // ── Tab definitions ─────────────────────────────────────────────────────────
 
-const TABS = ["Flights", "Hotels", "Activities", "Restaurants", "Summary"] as const;
+const TABS = ["Flights", "Summary"] as const;
 type TabId = (typeof TABS)[number];
 
 // ── Props ───────────────────────────────────────────────────────────────────
@@ -41,9 +42,6 @@ interface TripResultsModalProps {
   dates?: { start: string; end: string };
   adults: number;
   flights: FlightResult[];
-  hotels: HotelResult[];
-  activities: ActivityResult[];
-  restaurants: RestaurantResult[];
   budgetTier: BudgetTier;
   tripId?: number;
 }
@@ -57,28 +55,18 @@ export default function TripResultsModal({
   dates,
   adults,
   flights,
-  hotels,
-  activities,
-  restaurants,
   budgetTier,
   tripId,
 }: TripResultsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>("Flights");
   const [flightSort, setFlightSort] = useState<"price" | "duration" | "airline">("price");
-  const [hotelSort, setHotelSort] = useState<"price" | "rating">("price");
   const [selectedFlights, setSelectedFlights] = useState<Set<number>>(new Set());
-  const [selectedHotels, setSelectedHotels] = useState<Set<number>>(new Set());
-  const [selectedActivities, setSelectedActivities] = useState<Set<number>>(new Set());
-  const [selectedRestaurants, setSelectedRestaurants] = useState<Set<number>>(new Set());
   const [addingAll, setAddingAll] = useState(false);
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
-  // Per-item selected day (keyed by global index within each category)
+  // Per-flight selected day (keyed by index in flights)
   const [flightDays, setFlightDays] = useState<Record<number, number>>({});
-  const [hotelDays, setHotelDays] = useState<Record<number, number>>({});
-  const [activityDays, setActivityDays] = useState<Record<number, number>>({});
-  const [restaurantDays, setRestaurantDays] = useState<Record<number, number>>({});
 
-  const totalSelected = selectedFlights.size + selectedHotels.size + selectedActivities.size + selectedRestaurants.size;
+  const totalSelected = selectedFlights.size;
 
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -110,27 +98,12 @@ export default function TripResultsModal({
     return sorted;
   }, [flights, flightSort]);
 
+  const pricedFlights = useMemo(() => flights.filter((f) => f.price_value < PRICE_UNKNOWN), [flights]);
+
   const cheapestFlightValue = useMemo(
-    () => flights.length > 0 ? Math.min(...flights.map((f) => f.price_value)) : 0,
-    [flights]
+    () => pricedFlights.length > 0 ? Math.min(...pricedFlights.map((f) => f.price_value)) : null,
+    [pricedFlights]
   );
-
-  const sortedHotels = useMemo(() => {
-    const sorted = [...hotels];
-    if (hotelSort === "price") sorted.sort((a, b) => a.price_night_value - b.price_night_value);
-    else sorted.sort((a, b) => b.rating - a.rating);
-    return sorted;
-  }, [hotels, hotelSort]);
-
-  const groupedActivities = useMemo(() => {
-    const groups: Record<string, ActivityResult[]> = {};
-    for (const a of activities) {
-      const key = a.interest || "Other";
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(a);
-    }
-    return groups;
-  }, [activities]);
 
   // ── Focus trap + escape key ────────────────────────────────────────────
 
@@ -182,32 +155,7 @@ export default function TripResultsModal({
     };
   }, [isOpen, onClose]);
 
-  // ── Default day for a new item (day with fewest assignments across activities + restaurants) ──
-
-  const getDefaultDay = useCallback((): number => {
-    if (dayCount <= 1) return 1;
-    // Count how many items are currently assigned to each day
-    const counts: Record<number, number> = {};
-    for (let d = 1; d <= dayCount; d++) counts[d] = 0;
-    for (const day of Object.values(activityDays)) {
-      if (day >= 1 && day <= dayCount) {
-        counts[day] = (counts[day] ?? 0) + 1;
-      }
-    }
-    for (const day of Object.values(restaurantDays)) {
-      if (day >= 1 && day <= dayCount) {
-        counts[day] = (counts[day] ?? 0) + 1;
-      }
-    }
-    // Return the day with the fewest assignments; ties go to the lowest day number
-    let best = 1;
-    for (let d = 2; d <= dayCount; d++) {
-      if ((counts[d] ?? 0) < (counts[best] ?? 0)) best = d;
-    }
-    return best;
-  }, [dayCount, activityDays, restaurantDays]);
-
-  // ── Activity selection toggle ──────────────────────────────────────────
+  // ── Flight selection toggle ──────────────────────────────────────────
 
   const toggleSelection = useCallback((setter: React.Dispatch<React.SetStateAction<Set<number>>>, idx: number) => {
     setter((prev) => {
@@ -219,54 +167,29 @@ export default function TripResultsModal({
   }, []);
 
   const toggleFlight = useCallback((idx: number) => toggleSelection(setSelectedFlights, idx), [toggleSelection]);
-  const toggleHotel = useCallback((idx: number) => toggleSelection(setSelectedHotels, idx), [toggleSelection]);
-  const toggleActivity = useCallback((idx: number) => toggleSelection(setSelectedActivities, idx), [toggleSelection]);
-  const toggleRestaurant = useCallback((idx: number) => toggleSelection(setSelectedRestaurants, idx), [toggleSelection]);
 
   // ── Summary calculations ───────────────────────────────────────────────
 
   const summary = useMemo(() => {
-    const cheapestFlight = flights.length > 0 ? Math.min(...flights.map((f) => f.price_value)) : 0;
-    const cheapestHotel = hotels.length > 0 ? Math.min(...hotels.map((h) => h.price_night_value)) : 0;
-    const selectedActivityCost = activities.reduce(
-      (sum, a, i) => (selectedActivities.has(i) ? sum + a.price_value : sum),
-      0
-    );
-    const allActivityCost = activities.reduce((sum, a) => sum + a.price_value, 0);
-
-    // Estimate dining cost from price_range symbols: $ ~$15, $$ ~$35, $$$ ~$65, $$$$ ~$100
-    const priceRangeToValue = (pr: string): number => {
-      const dollars = (pr.match(/\$/g) || []).length;
-      if (dollars <= 1) return 15;
-      if (dollars === 2) return 35;
-      if (dollars === 3) return 65;
-      return 100;
-    };
-    const selectedDiningCost = restaurants.reduce(
-      (sum, r, i) => (selectedRestaurants.has(i) ? sum + priceRangeToValue(r.price_range) : sum),
-      0
-    );
-    const allDiningCost = restaurants.reduce((sum, r) => sum + priceRangeToValue(r.price_range), 0);
-
-    const flightTotal = cheapestFlight * adults;
-    const hotelTotal = cheapestHotel * nights;
-    const diningTotal = selectedRestaurants.size > 0 ? selectedDiningCost : allDiningCost;
-    const minTotal = flightTotal + hotelTotal + selectedActivityCost + (selectedRestaurants.size > 0 ? selectedDiningCost : 0);
-    const maxTotal = flightTotal + hotelTotal + allActivityCost + allDiningCost;
+    const cheapestFlight = pricedFlights.length > 0 ? Math.min(...pricedFlights.map((f) => f.price_value)) : null;
+    const flightTotal = cheapestFlight !== null ? cheapestFlight * adults : null;
+    const minTotal = flightTotal;
+    const maxTotal = flightTotal;
     const totalDays = nights > 0 ? nights : 1;
-    const avgPerDay = Math.round(minTotal / totalDays);
+    const avgPerDay = minTotal !== null ? Math.round(minTotal / totalDays) : null;
 
     return {
       flightTotal,
-      hotelTotal,
-      selectedActivityCost,
-      allActivityCost,
-      diningTotal,
       minTotal,
       maxTotal,
       avgPerDay,
     };
-  }, [flights, hotels, activities, selectedActivities, restaurants, selectedRestaurants, adults, nights]);
+  }, [pricedFlights, adults, nights]);
+
+  const formatMoney = useCallback((value: number | null) => {
+    if (value === null) return "—";
+    return `$${value.toLocaleString()}`;
+  }, []);
 
   // ── Add All to Itinerary ───────────────────────────────────────────────
 
@@ -290,7 +213,7 @@ export default function TripResultsModal({
 
     const items: BatchItem[] = [];
 
-    // Add selected flights (or cheapest if none selected)
+    // Add selected flights (or top of sorted list when nothing is selected)
     if (selectedFlights.size > 0) {
       for (const idx of selectedFlights) {
         const f = flights[idx];
@@ -305,7 +228,7 @@ export default function TripResultsModal({
         });
       }
     } else if (sortedFlights.length > 0) {
-      // Default: add cheapest flight (first in sorted list)
+      // Default when nothing is ticked: add the flight currently at the top of the list (follows the active sort).
       const f = sortedFlights[0];
       const realIdx = flights.indexOf(f);
       items.push({
@@ -315,66 +238,6 @@ export default function TripResultsModal({
         description: joinNonEmpty([f.duration, f.stops, f.price], " - "),
         price_estimate: f.price,
         affiliate_url: f.book_url,
-      });
-    }
-
-    // Add selected hotels (or cheapest if none selected)
-    if (selectedHotels.size > 0) {
-      for (const idx of selectedHotels) {
-        const h = hotels[idx];
-        if (!h) continue;
-        items.push({
-          day_number: hotelDays[idx] || 1,
-          category: "hotel",
-          title: h.name,
-          description: `${h.price_night}/night × ${nights} nights - ${h.rating} stars`,
-          price_estimate: `$${h.price_night_value * nights}`,
-          affiliate_url: h.book_url,
-        });
-      }
-    } else if (sortedHotels.length > 0) {
-      // Default: add cheapest hotel (first in sorted list)
-      const h = sortedHotels[0];
-      const realIdx = hotels.indexOf(h);
-      items.push({
-        day_number: hotelDays[realIdx] || 1,
-        category: "hotel",
-        title: h.name,
-        description: `${h.price_night}/night × ${nights} nights - ${h.rating} stars`,
-        price_estimate: `$${h.price_night_value * nights}`,
-        affiliate_url: h.book_url,
-      });
-    }
-
-    // Add selected activities (or all if none selected)
-    const activityIndices =
-      selectedActivities.size > 0 ? Array.from(selectedActivities) : activities.map((_, i) => i);
-    for (const idx of activityIndices) {
-      const a = activities[idx];
-      if (!a) continue;
-      items.push({
-        day_number: activityDays[idx] ?? 1,
-        category: "activity",
-        title: a.name,
-        description: `${a.duration || ""} - ${a.interest}`.trim(),
-        price_estimate: a.price,
-        affiliate_url: "",
-      });
-    }
-
-    // Add selected restaurants (or all if none selected)
-    const restaurantIndices =
-      selectedRestaurants.size > 0 ? Array.from(selectedRestaurants) : restaurants.map((_, i) => i);
-    for (const idx of restaurantIndices) {
-      const r = restaurants[idx];
-      if (!r) continue;
-      items.push({
-        day_number: restaurantDays[idx] ?? getDefaultDay(),
-        category: "restaurant",
-        title: r.name,
-        description: `${r.cuisine} · ${r.neighborhood} · ${r.price_range}`,
-        price_estimate: r.price_range,
-        affiliate_url: "",
       });
     }
 
@@ -405,7 +268,7 @@ export default function TripResultsModal({
     }
 
     setAddingAll(false);
-  }, [tripId, flights, hotels, sortedFlights, sortedHotels, activities, nights, selectedFlights, selectedHotels, selectedActivities, activityDays, flightDays, hotelDays, selectedRestaurants, restaurants, restaurantDays, getDefaultDay]);
+  }, [tripId, flights, sortedFlights, selectedFlights, flightDays]);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -460,16 +323,7 @@ export default function TripResultsModal({
           <div className="flex gap-6">
             {TABS.map((tab) => {
               const isActive = activeTab === tab;
-              const count =
-                tab === "Flights"
-                  ? flights.length
-                  : tab === "Hotels"
-                  ? hotels.length
-                  : tab === "Activities"
-                  ? activities.length
-                  : tab === "Restaurants"
-                  ? restaurants.length
-                  : null;
+              const count = tab === "Flights" ? flights.length : null;
               return (
                 <button
                   key={tab}
@@ -532,7 +386,7 @@ export default function TripResultsModal({
                 <div className="space-y-3">
                   {sortedFlights.map((f, i) => {
                     const realIdx = flights.indexOf(f);
-                    const isCheapest = f.price_value === cheapestFlightValue;
+                    const isCheapest = cheapestFlightValue !== null && f.price_value === cheapestFlightValue;
                     const isSelected = selectedFlights.has(realIdx);
                     const airlineName = f.airline.trim();
                     return (
@@ -623,331 +477,6 @@ export default function TripResultsModal({
             )}
           </div>
 
-          {/* Hotels Tab */}
-          <div
-            role="tabpanel"
-            id="panel-Hotels"
-            aria-labelledby="tab-Hotels"
-            className={activeTab === "Hotels" ? "" : "hidden"}
-          >
-            {hotels.length === 0 ? (
-              <p className="text-sm text-gray-400 py-8 text-center">No hotel results available.</p>
-            ) : (
-              <>
-                {/* Sort toggles */}
-                <div className="flex gap-2 mb-4">
-                  {(["price", "rating"] as const).map((key) => (
-                    <button
-                      key={key}
-                      onClick={() => setHotelSort(key)}
-                      className={[
-                        "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
-                        hotelSort === key
-                          ? "bg-orange-100 text-orange-700"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                      ].join(" ")}
-                    >
-                      Sort by {key.charAt(0).toUpperCase() + key.slice(1)}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {sortedHotels.map((h, i) => {
-                    const realIdx = hotels.indexOf(h);
-                    const stars = Math.round(h.rating);
-                    const tierClass = TIER_BADGE[h.tier] || "bg-gray-100 text-gray-600";
-                    const totalCost = h.total_cost || `$${(h.price_night_value * nights).toLocaleString()}`;
-                    const isSelected = selectedHotels.has(realIdx);
-                    return (
-                      <div
-                        key={i}
-                        onClick={() => toggleHotel(realIdx)}
-                        className={[
-                          "cursor-pointer bg-white rounded-lg border p-4 hover:shadow-md transition-shadow",
-                          isSelected ? "border-orange-400 ring-2 ring-orange-200 bg-orange-50/30" : "border-gray-200",
-                        ].join(" ")}
-                      >
-                        <div className="flex justify-between items-start gap-2">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleHotel(realIdx)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 shrink-0 mt-1"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 truncate">{h.name}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-xs text-yellow-500">
-                                {"★".repeat(stars)}
-                                {"☆".repeat(Math.max(0, 5 - stars))}
-                              </span>
-                              <span className="text-xs text-gray-500">{h.rating}</span>
-                              <span
-                                className={[
-                                  "text-xs rounded px-1.5 py-0.5 font-medium capitalize",
-                                  tierClass,
-                                ].join(" ")}
-                              >
-                                {h.tier}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-bold text-lg text-orange-600">{h.price_night}</p>
-                            <p className="text-xs text-gray-400">/night</p>
-                          </div>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-2">
-                          {nights} {nights === 1 ? "night" : "nights"} total: <span className="font-medium text-gray-700">{totalCost}</span>
-                        </p>
-                        <div className="flex items-center gap-2 mt-3">
-                          <a
-                            href={h.book_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-full px-4 py-2 transition-colors"
-                          >
-                            Find on Hotels.com
-                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <path d="M5 12h14M12 5l7 7-7 7" />
-                            </svg>
-                          </a>
-                          {dayCount > 1 && (
-                            <select
-                              value={hotelDays[realIdx] || 1}
-                              onChange={(e) => { e.stopPropagation(); setHotelDays((prev) => ({ ...prev, [realIdx]: Number(e.target.value) })); }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-xs border border-gray-200 rounded px-2 py-1.5 text-gray-600"
-                            >
-                              {Array.from({ length: dayCount }, (_, d) => (
-                                <option key={d + 1} value={d + 1}>Day {d + 1}</option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Activities Tab */}
-          <div
-            role="tabpanel"
-            id="panel-Activities"
-            aria-labelledby="tab-Activities"
-            className={activeTab === "Activities" ? "" : "hidden"}
-          >
-            {activities.length === 0 ? (
-              <p className="text-sm text-gray-400 py-8 text-center">No activity results available.</p>
-            ) : (
-              <div className="space-y-6">
-                {Object.entries(groupedActivities).map(([interest, group]) => (
-                  <div key={interest}>
-                    <h3 className="text-sm font-semibold text-gray-700 capitalize mb-3 flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-orange-50 text-orange-600 rounded text-xs">
-                        {interest}
-                      </span>
-                    </h3>
-                    <div className="space-y-2">
-                      {group.map((a) => {
-                        // Find global index for selection tracking
-                        const globalIdx = activities.indexOf(a);
-                        const isSelected = selectedActivities.has(globalIdx);
-                        const tierClass = TIER_BADGE[a.tier] || "bg-gray-100 text-gray-600";
-                        const isOverBudget =
-                          (budgetTier === "budget" && a.tier === "luxury") ||
-                          (budgetTier === "budget" && a.tier === "mid") ||
-                          (budgetTier === "mid" && a.tier === "luxury");
-
-                        return (
-                          <div
-                            key={globalIdx}
-                            className={[
-                              "bg-white rounded-lg border p-3 transition-shadow hover:shadow-md",
-                              isSelected ? "border-orange-300 ring-1 ring-orange-200" : "border-gray-200",
-                            ].join(" ")}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm text-gray-900">{a.name}</p>
-                                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                  {a.duration && (
-                                    <span className="text-xs text-gray-500">{a.duration}</span>
-                                  )}
-                                  <span
-                                    className={[
-                                      "text-xs rounded px-1.5 py-0.5 font-medium capitalize",
-                                      tierClass,
-                                    ].join(" ")}
-                                  >
-                                    {a.tier}
-                                  </span>
-                                </div>
-                                {isOverBudget && (
-                                  <p className="text-xs text-amber-600 mt-1">
-                                    Above your {TIER_LABEL[budgetTier]} budget
-                                  </p>
-                                )}
-                              </div>
-                              <div className="text-right shrink-0">
-                                <p className="font-bold text-sm text-gray-900">{a.price}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 mt-2">
-                              {/* Day selector dropdown */}
-                              <select
-                                value={activityDays[globalIdx] ?? getDefaultDay()}
-                                onChange={(e) => {
-                                  const day = Number(e.target.value);
-                                  setActivityDays((prev) => ({ ...prev, [globalIdx]: day }));
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                aria-label={`Select day for ${a.name}`}
-                                className="text-xs border border-gray-300 rounded-full px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400 cursor-pointer"
-                              >
-                                {Array.from({ length: dayCount }, (_, i) => i + 1).map((d) => (
-                                  <option key={d} value={d}>
-                                    Day {d}
-                                  </option>
-                                ))}
-                              </select>
-                              {/* Add / Selected toggle button */}
-                              <button
-                                onClick={() => {
-                                  // Ensure day is set before toggling selection
-                                  if (activityDays[globalIdx] === undefined) {
-                                    setActivityDays((prev) => ({ ...prev, [globalIdx]: getDefaultDay() }));
-                                  }
-                                  toggleActivity(globalIdx);
-                                }}
-                                className={[
-                                  "text-xs font-medium px-3 py-1.5 rounded-full transition-colors",
-                                  isSelected
-                                    ? "bg-orange-500 text-white"
-                                    : "bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-600",
-                                ].join(" ")}
-                              >
-                                {isSelected ? "Selected" : "Add"}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Restaurants Tab */}
-          <div
-            role="tabpanel"
-            id="panel-Restaurants"
-            aria-labelledby="tab-Restaurants"
-            className={activeTab === "Restaurants" ? "" : "hidden"}
-          >
-            {restaurants.length === 0 ? (
-              <p className="text-sm text-gray-400 py-8 text-center">No restaurant results available.</p>
-            ) : (
-              <div className="space-y-3">
-                {restaurants.map((r, idx) => {
-                  const isSelected = selectedRestaurants.has(idx);
-                  return (
-                    <div
-                      key={idx}
-                      className={[
-                        "bg-white rounded-lg border p-3 transition-shadow hover:shadow-md",
-                        isSelected ? "border-orange-300 ring-1 ring-orange-200" : "border-gray-200",
-                      ].join(" ")}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleRestaurant(idx)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 shrink-0 mt-1"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm text-gray-900">{r.name}</p>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <span className="text-xs rounded px-1.5 py-0.5 font-medium bg-orange-100 text-orange-700">
-                                {r.cuisine}
-                              </span>
-                              <span className="text-xs text-gray-500">{r.neighborhood}</span>
-                              <span className="text-xs font-medium text-gray-700">{r.price_range}</span>
-                              {r.rating && (
-                                <span className="text-xs text-yellow-500">
-                                  {"★".repeat(Math.round(r.rating))}
-                                  {"☆".repeat(Math.max(0, 5 - Math.round(r.rating)))}
-                                </span>
-                              )}
-                            </div>
-                            {r.highlights.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1.5">
-                                {r.highlights.map((h, hIdx) => (
-                                  <span
-                                    key={hIdx}
-                                    className="text-[10px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5"
-                                  >
-                                    {h}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        {/* Day selector dropdown */}
-                        <select
-                          value={restaurantDays[idx] ?? getDefaultDay()}
-                          onChange={(e) => {
-                            const day = Number(e.target.value);
-                            setRestaurantDays((prev) => ({ ...prev, [idx]: day }));
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label={`Select day for ${r.name}`}
-                          className="text-xs border border-gray-300 rounded-full px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400 cursor-pointer"
-                        >
-                          {Array.from({ length: dayCount }, (_, i) => i + 1).map((d) => (
-                            <option key={d} value={d}>
-                              Day {d}
-                            </option>
-                          ))}
-                        </select>
-                        {/* Add / Selected toggle button */}
-                        <button
-                          onClick={() => {
-                            if (restaurantDays[idx] === undefined) {
-                              setRestaurantDays((prev) => ({ ...prev, [idx]: getDefaultDay() }));
-                            }
-                            toggleRestaurant(idx);
-                          }}
-                          className={[
-                            "text-xs font-medium px-3 py-1.5 rounded-full transition-colors",
-                            isSelected
-                              ? "bg-orange-500 text-white"
-                              : "bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-600",
-                          ].join(" ")}
-                        >
-                          {isSelected ? "Selected" : "Add"}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           {/* Summary Tab */}
           <div
             role="tabpanel"
@@ -965,45 +494,17 @@ export default function TripResultsModal({
                       Flights (cheapest x {adults} {adults === 1 ? "adult" : "adults"})
                     </span>
                     <span className="font-medium text-gray-900">
-                      ${summary.flightTotal.toLocaleString()}
+                      {formatMoney(summary.flightTotal)}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">
-                      Hotels (cheapest x {nights} {nights === 1 ? "night" : "nights"})
-                    </span>
-                    <span className="font-medium text-gray-900">
-                      ${summary.hotelTotal.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">
-                      Activities ({selectedActivities.size > 0 ? "selected" : "all"})
-                    </span>
-                    <span className="font-medium text-gray-900">
-                      $
-                      {(selectedActivities.size > 0
-                        ? summary.selectedActivityCost
-                        : summary.allActivityCost
-                      ).toLocaleString()}
-                    </span>
-                  </div>
-                  {restaurants.length > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">
-                        Dining (estimated)
-                      </span>
-                      <span className="font-medium text-gray-900">
-                        ~${summary.diningTotal.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
                   <div className="border-t border-gray-200 pt-3 flex justify-between text-sm">
                     <span className="font-semibold text-gray-900">Estimated Total</span>
                     <span className="font-bold text-lg text-orange-600">
-                      ${summary.minTotal.toLocaleString()}
-                      {summary.maxTotal > summary.minTotal &&
-                        ` - $${summary.maxTotal.toLocaleString()}`}
+                      {formatMoney(summary.minTotal)}
+                      {summary.maxTotal !== null &&
+                        summary.minTotal !== null &&
+                        summary.maxTotal > summary.minTotal &&
+                        ` - ${formatMoney(summary.maxTotal)}`}
                     </span>
                   </div>
                 </div>
@@ -1021,7 +522,9 @@ export default function TripResultsModal({
                 </p>
                 <p className="text-sm text-gray-700 mt-1">
                   This trip averages{" "}
-                  <span className="font-bold text-orange-600">${summary.avgPerDay}/day</span>
+                  <span className="font-bold text-orange-600">
+                    {summary.avgPerDay !== null ? `$${summary.avgPerDay}/day` : "—"}
+                  </span>
                 </p>
               </div>
             </div>
@@ -1037,9 +540,11 @@ export default function TripResultsModal({
             <p className="text-sm text-gray-600">
               Estimated total:{" "}
               <span className="font-bold text-gray-900">
-                ${summary.minTotal.toLocaleString()}
-                {summary.maxTotal > summary.minTotal &&
-                  ` - $${summary.maxTotal.toLocaleString()}`}
+                {formatMoney(summary.minTotal)}
+                {summary.maxTotal !== null &&
+                  summary.minTotal !== null &&
+                  summary.maxTotal > summary.minTotal &&
+                  ` - ${formatMoney(summary.maxTotal)}`}
               </span>
             </p>
             <button
