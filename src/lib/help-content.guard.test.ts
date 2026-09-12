@@ -78,6 +78,15 @@ const FORBIDDEN_LOCALE_PHRASES = [
   "hotéis ou atividades",
 ];
 
+/** Every string value in a nested translation object, with its dotted key path. */
+function flattenStrings(node: unknown, path = ""): Array<[string, string]> {
+  if (typeof node === "string") return [[path, node]];
+  if (node === null || typeof node !== "object") return [];
+  return Object.entries(node as Record<string, unknown>).flatMap(([k, v]) =>
+    flattenStrings(v, path ? `${path}.${k}` : k)
+  );
+}
+
 describe("no locale promises hotel/activity search", () => {
   const messagesDir = resolve(process.cwd(), "messages");
   const locales = readdirSync(messagesDir, { withFileTypes: true })
@@ -88,11 +97,30 @@ describe("no locale promises hotel/activity search", () => {
     expect(locales.length).toBeGreaterThanOrEqual(6);
   });
 
+  // Scan PARSED, NFC-NORMALIZED values — never the raw file text
+  // (feedback_scan_parsed_values_not_serialized). Two ways the same rendered
+  // sentence hides from a naive scan, both of which a translation tool
+  // round-tripping this file will happily emit:
+  //   1. the umlaut written as a JSON \u escape — valid JSON, renders identically,
+  //      and the raw bytes never contain the accented phrase;
+  //   2. the umlaut stored DECOMPOSED (plain a + combining diaeresis U+0308) —
+  //      byte-different from the composed form, visually and semantically identical.
+  // JSON.parse handles (1); normalizing both sides to NFC handles (2).
+  const nfc = (s: string) => s.normalize("NFC");
+  const forbidden = FORBIDDEN_LOCALE_PHRASES.map(nfc);
+
   it.each(locales)("messages/%s/common.json claims no hotel or activity search", (locale) => {
     const raw = readFileSync(resolve(messagesDir, locale, "common.json"), "utf-8");
+    const entries = flattenStrings(JSON.parse(raw));
 
-    for (const phrase of FORBIDDEN_LOCALE_PHRASES) {
-      expect(raw, `messages/${locale}/common.json still contains "${phrase}"`).not.toContain(phrase);
-    }
+    expect(entries.length, `messages/${locale}/common.json produced no strings to scan`).toBeGreaterThan(0);
+
+    const offenders = entries.flatMap(([key, value]) =>
+      forbidden
+        .filter((phrase) => nfc(value).includes(phrase))
+        .map((phrase) => `${locale}: ${key} contains "${phrase}"`)
+    );
+
+    expect(offenders).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { PRICE_UNKNOWN, DURATION_UNKNOWN } from "./types";
+import { PRICE_UNKNOWN, DURATION_UNKNOWN, NO_PRICE_LABEL } from "./types";
 import type { FlightResult } from "./types";
 
 function joinNonEmpty(parts: string[], separator: string): string {
@@ -160,7 +160,7 @@ export default function TripResultsModal({
   }, [pricedFlights, adults]);
 
   const formatMoney = useCallback((value: number | null) => {
-    if (value === null) return "—";
+    if (value === null) return NO_PRICE_LABEL;
     return `$${value.toLocaleString()}`;
   }, []);
 
@@ -191,11 +191,12 @@ export default function TripResultsModal({
       for (const idx of selectedFlights) {
         const f = flights[idx];
         if (!f) continue;
+        const priceForText = f.price === NO_PRICE_LABEL ? "" : f.price;
         items.push({
           day_number: flightDays[idx] || 1,
           category: "flight",
           title: joinNonEmpty([f.airline, f.route], " "),
-          description: joinNonEmpty([f.duration, f.stops, f.price], " - "),
+          description: joinNonEmpty([f.duration, f.stops, priceForText], " - "),
           price_estimate: f.price,
           affiliate_url: f.book_url,
         });
@@ -204,11 +205,12 @@ export default function TripResultsModal({
       // Default when nothing is ticked: add the flight currently at the top of the list (follows the active sort).
       const f = sortedFlights[0];
       const realIdx = flights.indexOf(f);
+      const priceForText = f.price === NO_PRICE_LABEL ? "" : f.price;
       items.push({
         day_number: flightDays[realIdx] || 1,
         category: "flight",
         title: joinNonEmpty([f.airline, f.route], " "),
-        description: joinNonEmpty([f.duration, f.stops, f.price], " - "),
+        description: joinNonEmpty([f.duration, f.stops, priceForText], " - "),
         price_estimate: f.price,
         affiliate_url: f.book_url,
       });
