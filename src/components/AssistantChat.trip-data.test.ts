@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { extractTripData } from "./AssistantChat";
-import { PRICE_UNKNOWN, DURATION_UNKNOWN } from "./atlas/types";
+import { PRICE_UNKNOWN, DURATION_UNKNOWN, NO_PRICE_LABEL } from "./atlas/types";
 
 function flightPart(flights: unknown[]) {
   return [{ type: "tool" as const, toolName: "search_flights", data: { flights } }];
@@ -32,10 +32,10 @@ describe("extractTripData — flight results", () => {
 
   it("never turns an unknown price into $0", () => {
     const { flights } = extractTripData(
-      flightPart([{ airline: "Delta", route: "MIA → JFK", price: "—", stops: "", book_url: "u" }])
+      flightPart([{ airline: "Delta", route: "MIA → JFK", price: NO_PRICE_LABEL, stops: "", book_url: "u" }])
     );
 
-    expect(flights[0].price).toBe("—");
+    expect(flights[0].price).toBe(NO_PRICE_LABEL);
     expect(flights[0].price_value).not.toBe(0);
     expect(flights[0].price_value).toBe(PRICE_UNKNOWN);
   });
@@ -44,13 +44,15 @@ describe("extractTripData — flight results", () => {
     const { flights } = extractTripData(flightPart([{ airline: "Delta", route: "MIA → JFK", book_url: "u" }]));
 
     expect(flights[0].price).not.toBe("$0");
+    // the producer's own no-price label, not a second wording invented here
+    expect(flights[0].price).toBe(NO_PRICE_LABEL);
     expect(flights[0].price_value).toBe(PRICE_UNKNOWN);
   });
 
   it("sorts an unpriced flight after every priced one", () => {
     const { flights } = extractTripData(
       flightPart([
-        { airline: "A", route: "r", price: "—", book_url: "u" },
+        { airline: "A", route: "r", price: NO_PRICE_LABEL, book_url: "u" },
         { airline: "B", route: "r", price: "$900", book_url: "u" },
         { airline: "C", route: "r", price: "$100", book_url: "u" },
       ])
@@ -72,7 +74,11 @@ describe("extractTripData — flight results", () => {
       ])
     );
 
-    expect(flights[0].duration).toBe("duration unavailable");
+    // An unknown duration stays empty so joinNonEmpty drops it from card text
+    // and from the itinerary item description; DURATION_UNKNOWN carries the fact
+    // for sorting. Rendering a "duration unavailable" string on every row (the
+    // producer always sends "") was noise, and it was persisted into trip_items.
+    expect(flights[0].duration).toBe("");
     expect(flights[0].duration).not.toBe("0h 0m");
     expect(flights[0].duration_minutes).toBe(DURATION_UNKNOWN);
     expect(flights[1].duration_minutes).toBe(195);

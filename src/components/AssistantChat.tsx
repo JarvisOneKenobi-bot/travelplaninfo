@@ -16,7 +16,7 @@ import DestinationCard from "./atlas/DestinationCard";
 import ArticleCard from "./atlas/ArticleCard";
 import TripResultsModal from "./atlas/TripResultsModal";
 import type { FlightResult, BudgetTier } from "./atlas/types";
-import { PRICE_UNKNOWN, DURATION_UNKNOWN } from "./atlas/types";
+import { PRICE_UNKNOWN, DURATION_UNKNOWN, NO_PRICE_LABEL } from "./atlas/types";
 
 // ── Trip tools ───────────────────────────────────────────────────────────────
 // Results from these tools are collected into the results window rather than
@@ -158,9 +158,10 @@ export function extractTripData(parts: ToolResult[]): {
     if (p.toolName === "search_flights" && Array.isArray(p.data.flights)) {
       for (const f of p.data.flights as Record<string, unknown>[]) {
         const priceRaw = typeof f.price === "string" ? f.price.trim() : "";
-        const price = priceRaw || "price unavailable";
+        const price = priceRaw || NO_PRICE_LABEL;
         const durationRaw = typeof f.duration === "string" ? f.duration.trim() : "";
-        const duration = durationRaw || "duration unavailable";
+        // An empty duration is intentional so joinNonEmpty drops it.
+        const duration = durationRaw;
         const stops = String(f.stops || "");
         const parsedPrice = typeof f.price_value === "number" ? f.price_value : parsePriceValue(price);
         flights.push({
@@ -409,7 +410,7 @@ function buildAutoSearchPrompt(ctx: {
     const howLong = ctx.tripLength ? lengthLabels[ctx.tripLength] || ctx.tripLength : "flexible duration";
     prompt += `. I'm flexible on dates — thinking ${when}, for ${howLong}`;
   }
-  prompt += ". Search flights, hotels, and activities for me.";
+  prompt += ". Search flights for me.";
   return prompt;
 }
 
@@ -434,6 +435,7 @@ export default function AssistantChat() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalData, setModalData] = useState<ModalData | null>(null);
+  const [modalSeq, setModalSeq] = useState(0);
 
   // ── Trip context for trigger governance ──────────────────────────────────
   const [tripCtx, setTripCtx] = useState<TripContext>(() => ({
@@ -1024,12 +1026,13 @@ export default function AssistantChat() {
                                   data={part.data!}
                                 />
                               ))}
-                            {/* "View Full Plan" button — only when streaming is complete */}
+                            {/* "View flight results" button — only when streaming is complete */}
                             {!msg.isStreaming && (
                               <button
                                 onClick={() => {
                                   const ctx = readTripContext();
                                   setModalData({ flights: tripFlights, tripContext: ctx });
+                                  setModalSeq((n) => n + 1);
                                   setModalOpen(true);
                                 }}
                                 className="mt-3 w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors"
@@ -1039,7 +1042,7 @@ export default function AssistantChat() {
                                   <line x1="3" y1="9" x2="21" y2="9" />
                                   <line x1="9" y1="21" x2="9" y2="9" />
                                 </svg>
-                                View Full Plan
+                                View flight results
                               </button>
                             )}
                           </>
@@ -1294,6 +1297,7 @@ export default function AssistantChat() {
                                   onClick={() => {
                                     const ctx = readTripContext();
                                     setModalData({ flights: tripFlights, tripContext: ctx });
+                                    setModalSeq((n) => n + 1);
                                     setModalOpen(true);
                                   }}
                                   className="mt-4 w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-colors"
@@ -1303,7 +1307,7 @@ export default function AssistantChat() {
                                     <line x1="3" y1="9" x2="21" y2="9" />
                                     <line x1="9" y1="21" x2="9" y2="9" />
                                   </svg>
-                                  View Full Plan
+                                  View flight results
                                 </button>
                               )}
                             </>
@@ -1444,13 +1448,13 @@ export default function AssistantChat() {
       {/* Trip Results Modal */}
       {modalData && (
         <TripResultsModal
+          key={modalSeq}
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           destination={modalData.tripContext.destination}
           dates={modalData.tripContext.dates}
           adults={modalData.tripContext.adults}
           flights={modalData.flights}
-          budgetTier={modalData.tripContext.budgetTier}
           tripId={modalData.tripContext.tripId}
         />
       )}

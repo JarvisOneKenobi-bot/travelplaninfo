@@ -1,28 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { PRICE_UNKNOWN } from "./types";
-import type { FlightResult, BudgetTier } from "./types";
-
-// ── Budget tier badge colors (consistent with ItineraryBuilder) ─────────────
-
-const TIER_BADGE: Record<BudgetTier, string> = {
-  budget: "bg-green-100 text-green-700",
-  mid: "bg-blue-100 text-blue-700",
-  luxury: "bg-purple-100 text-purple-700",
-};
-
-const TIER_LABEL: Record<BudgetTier, string> = {
-  budget: "Budget",
-  mid: "Mid-range",
-  luxury: "Luxury",
-};
-
-const BUDGET_DAILY_RANGES: Record<BudgetTier, string> = {
-  budget: "$50-100/day",
-  mid: "$100-250/day",
-  luxury: "$250+/day",
-};
+import { PRICE_UNKNOWN, DURATION_UNKNOWN } from "./types";
+import type { FlightResult } from "./types";
 
 function joinNonEmpty(parts: string[], separator: string): string {
   return parts.filter(Boolean).join(separator);
@@ -42,7 +22,6 @@ interface TripResultsModalProps {
   dates?: { start: string; end: string };
   adults: number;
   flights: FlightResult[];
-  budgetTier: BudgetTier;
   tripId?: number;
 }
 
@@ -55,7 +34,6 @@ export default function TripResultsModal({
   dates,
   adults,
   flights,
-  budgetTier,
   tripId,
 }: TripResultsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>("Flights");
@@ -72,15 +50,7 @@ export default function TripResultsModal({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<Element | null>(null);
 
-  // ── Calculate nights and total trip days ───────────────────────────────
-
-  const nights = useMemo(() => {
-    if (!dates?.start || !dates?.end) return 1;
-    const start = new Date(dates.start);
-    const end = new Date(dates.end);
-    const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    return diff > 0 ? diff : 1;
-  }, [dates]);
+  // ── Calculate total trip days ─────────────────────────────────────────
 
   // Total trip days (inclusive of arrival and departure day)
   const dayCount = useMemo(() => {
@@ -89,6 +59,13 @@ export default function TripResultsModal({
   }, [dates]);
 
   // ── Sorted data ────────────────────────────────────────────────────────
+
+  const durationKnown = useMemo(
+    () => flights.some((f) => f.duration_minutes !== DURATION_UNKNOWN),
+    [flights]
+  );
+  const sortKeys = durationKnown ? (["price", "duration", "airline"] as const)
+                                 : (["price", "airline"] as const);
 
   const sortedFlights = useMemo(() => {
     const sorted = [...flights];
@@ -175,16 +152,12 @@ export default function TripResultsModal({
     const flightTotal = cheapestFlight !== null ? cheapestFlight * adults : null;
     const minTotal = flightTotal;
     const maxTotal = flightTotal;
-    const totalDays = nights > 0 ? nights : 1;
-    const avgPerDay = minTotal !== null ? Math.round(minTotal / totalDays) : null;
 
     return {
-      flightTotal,
       minTotal,
       maxTotal,
-      avgPerDay,
     };
-  }, [pricedFlights, adults, nights]);
+  }, [pricedFlights, adults]);
 
   const formatMoney = useCallback((value: number | null) => {
     if (value === null) return "—";
@@ -294,16 +267,12 @@ export default function TripResultsModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
           <div>
             <h2 id="trip-results-title" className="text-xl font-bold text-gray-900">
-              Trip Plan: {destination}
+              Flights: {destination}
             </h2>
             <p className="text-sm text-gray-500 mt-0.5">
               {dates ? `${dates.start} - ${dates.end}` : "Flexible dates"}
               {" | "}
               {adults} {adults === 1 ? "adult" : "adults"}
-              {" | "}
-              <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${TIER_BADGE[budgetTier]}`}>
-                {TIER_LABEL[budgetTier]}
-              </span>
             </p>
           </div>
           <button
@@ -367,7 +336,7 @@ export default function TripResultsModal({
               <>
                 {/* Sort toggles */}
                 <div className="flex gap-2 mb-4">
-                  {(["price", "duration", "airline"] as const).map((key) => (
+                  {sortKeys.map((key) => (
                     <button
                       key={key}
                       onClick={() => setFlightSort(key)}
@@ -489,16 +458,8 @@ export default function TripResultsModal({
               <div className="bg-gray-50 rounded-xl p-5">
                 <h3 className="font-semibold text-gray-900 mb-4">Cost Breakdown</h3>
                 <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">
-                      Flights (cheapest x {adults} {adults === 1 ? "adult" : "adults"})
-                    </span>
-                    <span className="font-medium text-gray-900">
-                      {formatMoney(summary.flightTotal)}
-                    </span>
-                  </div>
                   <div className="border-t border-gray-200 pt-3 flex justify-between text-sm">
-                    <span className="font-semibold text-gray-900">Estimated Total</span>
+                    <span className="font-semibold text-gray-900">Flights (cheapest × adults)</span>
                     <span className="font-bold text-lg text-orange-600">
                       {formatMoney(summary.minTotal)}
                       {summary.maxTotal !== null &&
@@ -508,24 +469,6 @@ export default function TripResultsModal({
                     </span>
                   </div>
                 </div>
-              </div>
-
-              {/* Budget comparison */}
-              <div className="bg-orange-50 rounded-xl p-5">
-                <h3 className="font-semibold text-gray-900 mb-2">Budget Comparison</h3>
-                <p className="text-sm text-gray-700">
-                  Your budget tier:{" "}
-                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${TIER_BADGE[budgetTier]}`}>
-                    {TIER_LABEL[budgetTier]}
-                  </span>{" "}
-                  ({BUDGET_DAILY_RANGES[budgetTier]})
-                </p>
-                <p className="text-sm text-gray-700 mt-1">
-                  This trip averages{" "}
-                  <span className="font-bold text-orange-600">
-                    {summary.avgPerDay !== null ? `$${summary.avgPerDay}/day` : "—"}
-                  </span>
-                </p>
               </div>
             </div>
           </div>
@@ -538,7 +481,7 @@ export default function TripResultsModal({
           )}
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-600">
-              Estimated total:{" "}
+              Flights (cheapest × adults){" "}
               <span className="font-bold text-gray-900">
                 {formatMoney(summary.minTotal)}
                 {summary.maxTotal !== null &&

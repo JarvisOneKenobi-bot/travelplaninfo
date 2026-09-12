@@ -15,7 +15,7 @@ export interface FlightResult {
   book_url: string;
 }
 
-/** Budget tier type reused across modal and chat */
+/** Budget tier type used by AssistantChat */
 export type BudgetTier = "budget" | "mid" | "luxury";
 
 /**
@@ -26,6 +26,9 @@ export type BudgetTier = "budget" | "mid" | "luxury";
  * excluded from every cheapest/total calculation.
  */
 export const PRICE_UNKNOWN = Number.MAX_SAFE_INTEGER;
+
+/** The producer's label for a price it does not have. One spelling everywhere. */
+export const NO_PRICE_LABEL = "—";
 
 /** Sentinel `duration_minutes` for a flight whose duration is unknown. Sorts last. */
 export const DURATION_UNKNOWN = Number.MAX_SAFE_INTEGER;

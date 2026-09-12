@@ -358,7 +358,6 @@
     "bubblePlannerIntro": "Hallo! Ich bin Atlas, Ihr Reiseconcierge. Brauchen Sie Hilfe beim Planen?",
     "bubblePlannerDestination": "Können Sie sich nicht entscheiden? Sagen Sie mir, welches Flair Sie suchen",
     "bubbleItineraryEmpty": "Ihr Reiseplan sieht leer aus — soll ich einige Aktivitäten vorschlagen?",
-    "bubbleItineraryIdle": "Brauchen Sie Hilfe? Ich kann Flüge, Hotels oder Aktivitäten für Sie suchen",
     "bubbleItineraryInterests": "Tippen Sie auf das Mikrofon und sagen Sie mir, was Sie mögen — das geht schneller!"
   },
   "help": {
@@ -563,7 +562,7 @@
     "fromAirport": "ab {code}",
     "editTrip": "Bearbeiten",
     "atlasReadyTitle": "Atlas kann {destination} für dich planen.",
-    "atlasReadyBody": "Tippe unten auf den Chat, um Flüge, Hotels und Aktivitäten zu suchen — oder füge Einträge manuell hinzu."
+    "atlasReadyBody": "Tippe unten auf den Chat, um aktuelle Flüge zu suchen — oder füge Einträge manuell hinzu."
   },
   "trending": {
     "title": "Trending Destinations",
@@ -585,7 +584,7 @@
   },
   "atlasSmartSearch": {
     "ariaLabel": "Atlas intelligente Suche",
-    "prompt": "Ich kann Flüge, Hotels und Aktivitäten für {destination} suchen.",
+    "prompt": "Ich kann aktuelle Flüge für {destination} suchen und dir für alles Weitere passende Reiseführer empfehlen.",
     "start": "Intelligente Suche starten",
     "notYet": "Noch nicht"
   },

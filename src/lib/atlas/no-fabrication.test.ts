@@ -44,6 +44,9 @@ const SURPRISE_PATH_FILES = [
   "src/lib/atlas/city-names.ts",
   "src/lib/atlas/destination-vibes.ts",
   "src/lib/atlas/vibe-preflight.ts",
+  // The chat renders every tool result and is where fabricated prices/durations
+  // have twice been introduced; the dedicated describe below adds its own pins.
+  "src/components/AssistantChat.tsx",
 ];
 
 const BANNED_SUBSTRINGS = [
@@ -174,6 +177,14 @@ describe("AssistantChat fabrication tripwire", () => {
 
   it("never substitutes a made-up flight duration", () => {
     expect(content).not.toContain('"0h 0m"');
+  });
+
+  it("remounts the results window for each new result set", () => {
+    // TripResultsModal.test.tsx proves a key change clears selection; this pins
+    // that AssistantChat actually supplies a CHANGING key. Without it the modal
+    // stays mounted and index-keyed selection leaks between searches.
+    expect(content).toMatch(/key=\{modalSeq\}/);
+    expect(content.match(/setModalSeq\(/g) ?? [], "both open handlers must bump modalSeq").toHaveLength(2);
   });
 
   it("only treats live tools as trip tools", () => {
