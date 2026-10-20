@@ -130,7 +130,7 @@ The publisher change is coordinated with the factory remediation, which is touch
 1. **Fix the hotel and activity CTAs.**
    - Backfill `search_location` on all 66 articles. Derive it from the article's place, not the category, and have the model propose it from the title and body for review.
    - Make the CTA refuse to render when there's no real location, rather than searching for a bucket name.
-   - Replace the retired CJ link `15734399`.
+   - ~~Replace the retired CJ link `15734399`.~~ Dropped 2026-10-20: the link is active (§9.3).
 2. **Add flight buttons and click tracking.**
    - Add an Aviasales CTA using a real IATA code: an explicit `destination_iata` per article, or a proper airport lookup. Never the first 3 letters of the city.
    - Emit an affiliate-click event (partner, article slug, placement, trip session id if any) to GA4 so D10's metric becomes measurable.
@@ -196,7 +196,9 @@ WS-A cleanup  ═══╪══════════════════
 ## 9. Decisions from Jose (2026-10-20)
 1. **The deploy-safety HOLD is lifted.** The help + deploy-safety pair merges after the 10 review fixes, before the first WS-B deploy, so WS-B ships on the safer `deploy_tpi.sh`. Each deploy still needs Jose's visual review. The schedule timer stays disabled until the factory remediation is done; that is a separate decision.
 2. **Revenue measurement: GA4 click events only** (partner, slug, placement, trip session id). No partner sub-IDs this round. Revenue per guide stays inferred, not attributed. Sub-IDs are a later candidate.
-3. **CJ advertisers:** Hotels.com = `advertiserIds=1702763`; AirAdvisor = `advertiserIds=7818110` (approved for TPI). For each, the WS-B plan picks a live link ID under that advertiser that accepts a destination deep link, using CJ Link Search with Jose's CJ access. If no deep link is accepted, it falls back to the 39-city deep-link map. The backlog's `10772148` is unverified and not assumed.
+3. **CJ links, verified against Jose's CJ export (2026-10-20, all Active).**
+   - **Hotels.com:** evergreen `15734399` is **not retired**. It is "Evergreen Link for Hotels.com", deep-link enabled, 3-mo EPC $112.27. **Keep it.** WS-B1's "replace the retired link" item is dropped. `10772148` is not in the export.
+   - **AirAdvisor:** text link `17238636` (`https://www.kqzyfj.com/click-101692716-17238636?sid=travelplaninfo`) replaces the untagged URL.
 
 ## 10. Sources
 - Branch inventory, north-star audit and competitor recon: subagent reports, this session (2026-10-19).
