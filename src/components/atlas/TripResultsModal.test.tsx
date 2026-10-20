@@ -21,7 +21,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import TripResultsModal from "./TripResultsModal";
-import { NO_PRICE_LABEL, PRICE_UNKNOWN, type FlightResult } from "./types";
+import { DURATION_UNKNOWN, NO_PRICE_LABEL, PRICE_UNKNOWN, type FlightResult } from "./types";
 
 afterEach(() => {
   cleanup();
@@ -52,6 +52,21 @@ function unpricedFlight(): FlightResult {
     price: NO_PRICE_LABEL,
     price_value: PRICE_UNKNOWN,
   };
+}
+
+function unknownDurationFlight(airline: string, priceValue: number): FlightResult {
+  return { ...flight(airline, priceValue), duration: "", duration_minutes: DURATION_UNKNOWN };
+}
+
+/**
+ * DOM-order assertion: each airline text node must precede the next one in the
+ * document — how the flight rows are physically stacked after a sort click.
+ */
+function expectDomOrder(...airlines: string[]) {
+  const els = airlines.map((name) => screen.getByText(name));
+  for (let i = 0; i + 1 < els.length; i++) {
+    expect(els[i].compareDocumentPosition(els[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
 }
 
 function renderModal(flights: FlightResult[], seq: number) {
@@ -237,5 +252,42 @@ describe("an unpriced flight never persists a placeholder into the itinerary", (
     // itinerary row's description just persists a dash forever.
     expect(description).not.toContain(NO_PRICE_LABEL);
     expect(description).toBe("Nonstop");
+  });
+});
+
+describe("unknown durations stay unknown", () => {
+  it("hides Sort by Duration when no flight has a known duration", () => {
+    renderModal(
+      [
+        unknownDurationFlight("Delta", 100),
+        unknownDurationFlight("United", 200),
+        unknownDurationFlight("JetStream", 150),
+      ],
+      0
+    );
+
+    // positive control: the sort row rendered and Price is still offered —
+    // without this the hide assertion could pass vacuously.
+    expect(screen.getByRole("button", { name: "Sort by Price" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Sort by Duration" })).toBeNull();
+  });
+
+  it("sorts unknown-duration flights last under Sort by Duration", () => {
+    // Flights with durations 300, unknown and 120 (that array order), with
+    // prices chosen so the pre-click (price) order differs everywhere from the
+    // post-click duration order.
+    renderModal(
+      [
+        { ...unknownDurationFlight("AirMid", 100), duration: "5h", duration_minutes: 300 },
+        unknownDurationFlight("AirFar", 150),
+        { ...unknownDurationFlight("AirNorth", 200), duration: "2h", duration_minutes: 120 },
+      ],
+      0
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by Duration" }));
+
+    // 120, 300, UNKNOWN — the unknown row never wins a "shortest flight" slot.
+    expectDomOrder("AirNorth", "AirMid", "AirFar");
   });
 });

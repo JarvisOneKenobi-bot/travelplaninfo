@@ -16,7 +16,7 @@ import DestinationCard from "./atlas/DestinationCard";
 import ArticleCard from "./atlas/ArticleCard";
 import TripResultsModal from "./atlas/TripResultsModal";
 import type { FlightResult, BudgetTier } from "./atlas/types";
-import { PRICE_UNKNOWN, DURATION_UNKNOWN, NO_PRICE_LABEL } from "./atlas/types";
+import { extractTripData, type ToolResult } from "./atlas/trip-data";
 
 // ── Trip tools ───────────────────────────────────────────────────────────────
 // Results from these tools are collected into the results window rather than
@@ -73,13 +73,7 @@ const QUICK_ACTIONS = [
 ];
 
 // ── Helper: parse tool results from message content ──────────────────────────
-
-interface ToolResult {
-  type: "text" | "tool";
-  toolName?: string;
-  data?: Record<string, unknown>;
-  text?: string;
-}
+// ToolResult lives in ./atlas/trip-data next to extractTripData.
 
 function parseMessageContent(content: string): ToolResult[] {
   const parts: ToolResult[] = [];
@@ -131,63 +125,6 @@ function parseMessageContent(content: string): ToolResult[] {
   }
 
   return parts.length > 0 ? parts : [{ type: "text", text: content }];
-}
-
-// ── Helpers: parse numeric values from price strings + duration ──────────────
-
-function parsePriceValue(priceStr: string): number {
-  const match = priceStr.replace(/,/g, "").match(/[\d.]+/);
-  return match ? parseFloat(match[0]) : 0;
-}
-
-function parseDurationMinutes(durationStr: string): number {
-  const hMatch = durationStr.match(/(\d+)h/);
-  const mMatch = durationStr.match(/(\d+)m/);
-  return (hMatch ? parseInt(hMatch[1]) * 60 : 0) + (mMatch ? parseInt(mMatch[1]) : 0);
-}
-
-/** Extract typed arrays from parsed tool results */
-export function extractTripData(parts: ToolResult[]): {
-  flights: FlightResult[];
-} {
-  const flights: FlightResult[] = [];
-
-  for (const p of parts) {
-    if (p.type !== "tool" || !p.data) continue;
-
-    if (p.toolName === "search_flights" && Array.isArray(p.data.flights)) {
-      for (const f of p.data.flights as Record<string, unknown>[]) {
-        const priceRaw = typeof f.price === "string" ? f.price.trim() : "";
-        const price = priceRaw || NO_PRICE_LABEL;
-        const durationRaw = typeof f.duration === "string" ? f.duration.trim() : "";
-        // An empty duration is intentional so joinNonEmpty drops it.
-        const duration = durationRaw;
-        const stops = String(f.stops || "");
-        const parsedPrice = typeof f.price_value === "number" ? f.price_value : parsePriceValue(price);
-        flights.push({
-          airline: String(f.airline || ""),
-          route: String(f.route || ""),
-          price,
-          price_value: parsedPrice > 0 ? parsedPrice : PRICE_UNKNOWN,
-          duration,
-          duration_minutes:
-            typeof f.duration_minutes === "number"
-              ? f.duration_minutes
-              : durationRaw
-                ? parseDurationMinutes(durationRaw)
-                : DURATION_UNKNOWN,
-          stops,
-          nonstop: typeof f.nonstop === "boolean" ? f.nonstop : /nonstop/i.test(stops),
-          depart_date: f.depart_date ? String(f.depart_date) : undefined,
-          return_date: f.return_date ? String(f.return_date) : undefined,
-          book_url: String(f.book_url || ""),
-        });
-      }
-    }
-
-  }
-
-  return { flights };
 }
 
 /** Read trip context from the #atlas-trip-context script tag */

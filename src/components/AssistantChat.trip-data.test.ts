@@ -12,7 +12,7 @@
  * "Best Price" badge; 0 minutes sorts first as the shortest flight.
  */
 import { describe, expect, it } from "vitest";
-import { extractTripData } from "./AssistantChat";
+import { extractTripData, parseDurationMinutes } from "./atlas/trip-data";
 import { PRICE_UNKNOWN, DURATION_UNKNOWN, NO_PRICE_LABEL } from "./atlas/types";
 
 function flightPart(flights: unknown[]) {
@@ -108,5 +108,55 @@ describe("extractTripData — flight results", () => {
     ]);
 
     expect(flights).toEqual([]);
+  });
+
+  // The producer (or a future tool) can emit duration_minutes: 0 — which would
+  // sort the row FIRST as the "shortest flight", exactly like $0 sorts first.
+  it("guards a producer duration_minutes of 0 into DURATION_UNKNOWN", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "A", route: "r", price: "$100", duration_minutes: 0, book_url: "u" }])
+    );
+
+    expect(flights[0].duration_minutes).toBe(DURATION_UNKNOWN);
+  });
+
+  it("guards a producer duration_minutes of NaN into DURATION_UNKNOWN", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "A", route: "r", price: "$100", duration_minutes: NaN, book_url: "u" }])
+    );
+
+    expect(flights[0].duration_minutes).toBe(DURATION_UNKNOWN);
+  });
+
+  it("keeps a real positive duration_minutes verbatim", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "A", route: "r", price: "$100", duration_minutes: 425, book_url: "u" }])
+    );
+
+    expect(flights[0].duration_minutes).toBe(425);
+  });
+});
+
+describe("parseDurationMinutes", () => {
+  it("parses ISO-8601 PT durations, case-insensitively", () => {
+    expect(parseDurationMinutes("PT5H30M")).toBe(330);
+    expect(parseDurationMinutes("pt5h30m")).toBe(330);
+  });
+
+  it("parses the compact h/m forms", () => {
+    expect(parseDurationMinutes("5h 30m")).toBe(330);
+    expect(parseDurationMinutes("5h")).toBe(300);
+    expect(parseDurationMinutes("45m")).toBe(45);
+  });
+
+  it("parses the verbose hrs/mins forms, case-insensitively", () => {
+    expect(parseDurationMinutes("5 hrs")).toBe(300);
+    expect(parseDurationMinutes("5 hrs 30 mins")).toBe(330);
+  });
+
+  it("returns DURATION_UNKNOWN when nothing parses or the total is <= 0", () => {
+    expect(parseDurationMinutes("soon")).toBe(DURATION_UNKNOWN);
+    expect(parseDurationMinutes("")).toBe(DURATION_UNKNOWN);
+    expect(parseDurationMinutes("0h 0m")).toBe(DURATION_UNKNOWN);
   });
 });
