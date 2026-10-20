@@ -291,7 +291,9 @@ Task 5 runs **before** Task 6, so the source-count tripwire is replaced before T
 
 - [ ] **Step 1: Write the prune script** `travelplaninfo/scratchpad/branch-prune-2026-10-20.sh`. It has modes `list` (default) and `apply`, and pins each ref's SHA at `list` time. `apply` refuses if any SHA moved or if the `archive/2026-10-20/*` tags or the bundle are missing.
   - **Local:** `feature/three-mode-entry-system`, `docs/2026-07-07-banked-plans`, `backup/pre-evergreen-slugs-2026-09-01`, `docs/apache-runbook-correction`, `feat/ga4-analytics`, `fix/guest-onboarding-atlas-wiring`, and `tpi-help-and-queued-content` (`git worktree remove` first, only after Task 9 `push`).
-  - **Remote:** `brand/favicons-2026-08-26`, `tpi-design-gemini`, plus the **7** fully-merged branches: `docs/apache-runbook-correction`, `docs/tpi-atlas-product-package`, `feat/ga4-analytics`, `feature/atlas-brain-relocation`, `feature/atlas-health-gate`, `fix/atlas-review-findings`, `fix/guest-onboarding-atlas-wiring`. Add `tpi-help-and-queued-content` after it is pushed.
+  - **Remote:** `brand/favicons-2026-08-26`, `tpi-design-gemini`, plus the **3** fully-merged branches still on GitHub: `docs/apache-runbook-correction`, `feat/ga4-analytics`, `fix/guest-onboarding-atlas-wiring`. Add `tpi-help-and-queued-content` after it is pushed.
+  - Already gone: `git fetch --prune` on 2026-10-20 showed that `docs/tpi-atlas-product-package`, `feature/atlas-brain-relocation`, `feature/atlas-health-gate` and `fix/atlas-review-findings` had already been deleted on GitHub.
+  - Task 10 Step 2 is done: the 4 `archive/2026-10-20/*` tags exist, and `/home/jarvis/backups/tpi-branches-2026-10-20.bundle` (1.7 GB) passes `git bundle verify`.
   - jarvis-project `tpi-deploy-safety` local + remote, after Task 9 `push`.
 - [ ] **Step 2: Clean build output.** In the travelplaninfo main checkout, `rm -rf .next playwright-report test-results .ruff_cache`. Verify with `ls data/tpi.db`; it must still be present.
 - [ ] **Step 3: Stop for Jose.** Show the `list` output with each archive tag. `apply` runs only on his approval.
