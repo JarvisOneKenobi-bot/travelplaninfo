@@ -8,6 +8,18 @@ function joinNonEmpty(parts: string[], separator: string): string {
   return parts.filter(Boolean).join(separator);
 }
 
+/**
+ * The price to PERSIST for a flight result, as opposed to the price to show:
+ * "—" (NO_PRICE_LABEL) is an honest display label for a missing price, but a
+ * dash persisted into trip_items.price_estimate is a lie the itinerary keeps
+ * forever. Either unknown-sentinel (dash label, or price_value ===
+ * PRICE_UNKNOWN) yields null; a real price passes through verbatim.
+ */
+export function priceEstimateFor(f: FlightResult): string | null {
+  if (f.price === NO_PRICE_LABEL || f.price_value === PRICE_UNKNOWN) return null;
+  return f.price;
+}
+
 // ── Tab definitions ─────────────────────────────────────────────────────────
 
 const TABS = ["Flights", "Summary"] as const;
@@ -180,7 +192,7 @@ export default function TripResultsModal({
       category: string;
       title: string;
       description: string;
-      price_estimate: string;
+      price_estimate: string | null;
       affiliate_url: string;
     }
 
@@ -191,13 +203,12 @@ export default function TripResultsModal({
       for (const idx of selectedFlights) {
         const f = flights[idx];
         if (!f) continue;
-        const priceForText = f.price === NO_PRICE_LABEL ? "" : f.price;
         items.push({
           day_number: flightDays[idx] || 1,
           category: "flight",
           title: joinNonEmpty([f.airline, f.route], " "),
-          description: joinNonEmpty([f.duration, f.stops, priceForText], " - "),
-          price_estimate: f.price,
+          description: joinNonEmpty([f.duration, f.stops, priceEstimateFor(f) ?? ""], " - "),
+          price_estimate: priceEstimateFor(f),
           affiliate_url: f.book_url,
         });
       }
@@ -205,13 +216,12 @@ export default function TripResultsModal({
       // Default when nothing is ticked: add the flight currently at the top of the list (follows the active sort).
       const f = sortedFlights[0];
       const realIdx = flights.indexOf(f);
-      const priceForText = f.price === NO_PRICE_LABEL ? "" : f.price;
       items.push({
         day_number: flightDays[realIdx] || 1,
         category: "flight",
         title: joinNonEmpty([f.airline, f.route], " "),
-        description: joinNonEmpty([f.duration, f.stops, priceForText], " - "),
-        price_estimate: f.price,
+        description: joinNonEmpty([f.duration, f.stops, priceEstimateFor(f) ?? ""], " - "),
+        price_estimate: priceEstimateFor(f),
         affiliate_url: f.book_url,
       });
     }

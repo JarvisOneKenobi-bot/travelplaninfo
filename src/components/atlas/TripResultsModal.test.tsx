@@ -137,6 +137,87 @@ describe("TripResultsModal selection does not leak between result sets", () => {
   });
 });
 
+describe("price_estimate persists null for unpriced flights, verbatim for priced ones", () => {
+  // Batch-body capture helper: renders one flight, optionally ticks it, clicks
+  // the add button, and returns the parsed fetch body the modal would POST.
+  async function addFlightAndCaptureBody(
+    flightUnderTest: FlightResult,
+    tick: boolean
+  ) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [{}] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderModal([flightUnderTest], 0);
+    if (tick) {
+      fireEvent.click(screen.getAllByRole("checkbox")[0]);
+      fireEvent.click(
+        screen.getByRole("button", { name: /Add Selected \(1\) to Itinerary/i })
+      );
+    } else {
+      fireEvent.click(screen.getByRole("button", { name: /Add All to Itinerary/i }));
+    }
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    return JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+  }
+
+  it("persists price_estimate null for an unpriced ticked flight", async () => {
+    const body = await addFlightAndCaptureBody(unpricedFlight(), true);
+
+    expect(body.items[0].price_estimate).toBe(null);
+    // "—" must not survive anywhere in the batch payload, not even as a
+    // leftover in description or title.
+    expect(JSON.stringify(body)).not.toContain(NO_PRICE_LABEL);
+  });
+
+  it("persists price_estimate null for the default top flight", async () => {
+    const body = await addFlightAndCaptureBody(unpricedFlight(), false);
+
+    expect(body.items[0].price_estimate).toBe(null);
+    expect(JSON.stringify(body)).not.toContain(NO_PRICE_LABEL);
+  });
+
+  // Each "unknown" condition is covered independently, so a fix that only
+  // checks ONE of the two sentinels (or one add path) fails a real test.
+  it("persists price_estimate null when the label is a dash but price_value is numeric", async () => {
+    const dashLabelNumericValue: FlightResult = {
+      ...flight("Carrier X", 289),
+      price: NO_PRICE_LABEL,
+    };
+    const body = await addFlightAndCaptureBody(dashLabelNumericValue, true);
+
+    expect(body.items[0].price_estimate).toBe(null);
+    expect(JSON.stringify(body)).not.toContain(NO_PRICE_LABEL);
+  });
+
+  it("persists price_estimate null when price_value is unknown but the label is not a dash", async () => {
+    const unknownValueNonDashLabel: FlightResult = {
+      ...flight("Carrier X", PRICE_UNKNOWN),
+      price: "Unknown",
+    };
+    const body = await addFlightAndCaptureBody(unknownValueNonDashLabel, true);
+
+    expect(body.items[0].price_estimate).toBe(null);
+  });
+
+  // Guards against the opposite failure mode: an "always null" fix would
+  // wipe real prices off every itinerary row on either add path.
+  it("keeps the real price_estimate for a priced flight on the ticked path", async () => {
+    const body = await addFlightAndCaptureBody(flight("Delta", 120), true);
+
+    expect(body.items[0].price_estimate).toBe("$120");
+  });
+
+  it("keeps the real price_estimate for a priced flight on the default top-flight path", async () => {
+    const body = await addFlightAndCaptureBody(flight("Delta", 120), false);
+
+    expect(body.items[0].price_estimate).toBe("$120");
+  });
+});
+
 describe("an unpriced flight never persists a placeholder into the itinerary", () => {
   it("omits the no-price label from the trip_items description", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
