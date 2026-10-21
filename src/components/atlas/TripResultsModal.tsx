@@ -61,6 +61,7 @@ export default function TripResultsModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<Element | null>(null);
+  const onCloseRef = useRef(onClose);
 
   // ── Calculate total trip days ─────────────────────────────────────────
 
@@ -96,20 +97,36 @@ export default function TripResultsModal({
 
   // ── Focus trap + escape key ────────────────────────────────────────────
 
+  // AssistantChat passes an inline onClose, so it changes identity on every
+  // parent render. The open effect below must NOT depend on it: it would
+  // tear down and re-run on every parent re-render, restash openerRef with
+  // whatever happens to hold focus at that instant (the close button this
+  // trap itself just focused) and schedule another animation frame that
+  // drags focus back to Close. Keep the LATEST handler on a ref instead and
+  // read it at event time; the effect only keys on isOpen.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!isOpen) return;
 
-    // Save opener element for focus restoration
+    // Save opener element for focus restoration — ONLY when the modal opens.
+    // Re-capturing it on every effect would overwrite the real opener with
+    // whatever held focus mid-session, and closing would restore the wrong
+    // element.
     openerRef.current = document.activeElement;
 
-    // Focus the close button on open
-    requestAnimationFrame(() => {
+    // Focus the close button on open, after paint. Track the frame id so the
+    // cleanup can cancel it: closing again before the frame fires must not
+    // yank focus forward through a stale callback.
+    const frameId = requestAnimationFrame(() => {
       closeButtonRef.current?.focus();
     });
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -136,13 +153,14 @@ export default function TripResultsModal({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      cancelAnimationFrame(frameId);
       document.removeEventListener("keydown", handleKeyDown);
       // Restore focus to opener
       if (openerRef.current && openerRef.current instanceof HTMLElement) {
         openerRef.current.focus();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   // ── Flight selection toggle ──────────────────────────────────────────
 

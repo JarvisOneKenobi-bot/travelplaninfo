@@ -373,6 +373,11 @@ export default function AssistantChat() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalData, setModalData] = useState<ModalData | null>(null);
   const [modalSeq, setModalSeq] = useState(0);
+  // Stable close handler: TripResultsModal's focus-trap effect keys on isOpen
+  // alone, so onClose must not change identity on every AssistantChat render
+  // (it would make the modal restash its opener and drag focus back to Close
+  // on each parent re-render).
+  const closeModal = useCallback(() => setModalOpen(false), []);
 
   // ── Trip context for trigger governance ──────────────────────────────────
   const [tripCtx, setTripCtx] = useState<TripContext>(() => ({
@@ -1387,7 +1392,7 @@ export default function AssistantChat() {
         <TripResultsModal
           key={modalSeq}
           isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           destination={modalData.tripContext.destination}
           dates={modalData.tripContext.dates}
           adults={modalData.tripContext.adults}

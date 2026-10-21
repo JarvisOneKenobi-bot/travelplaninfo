@@ -30,6 +30,8 @@ afterEach(() => {
   // set unstubGlobals — without this the canned fetch below leaks into any later
   // test in this file.
   vi.unstubAllGlobals();
+  // Same leak class for the fake rAF timers installed by the focus tests.
+  vi.useRealTimers();
 });
 
 function flight(airline: string, priceValue: number): FlightResult {
@@ -289,5 +291,117 @@ describe("unknown durations stay unknown", () => {
 
     // 120, 300, UNKNOWN — the unknown row never wins a "shortest flight" slot.
     expectDomOrder("AirNorth", "AirMid", "AirFar");
+  });
+});
+
+// ── Focus management ────────────────────────────────────────────────────────
+//
+// AssistantChat passes an inline onClose, so it changes identity on every
+// parent render. While the selection-isolation suite above only re-renders
+// with a stable onClose, the focus effect used to key on [isOpen, onClose]:
+// every parent re-render re-ran it, restashing openerRef with whatever held
+// focus at that instant and scheduling a fresh requestAnimationFrame whose
+// callback dragged focus back to Close. These tests pin the fix: the focus
+// effect keys on [isOpen] alone, reads the CURRENT close handler through a
+// ref, cancels the pending focus frame on cleanup, and restores focus to the
+// element that was focused when the modal OPENED.
+
+describe("TripResultsModal focus survives parent re-renders", () => {
+  function fakeRafTimers() {
+    // Fake ONLY the animation-frame pair: render/fireEvent/waits stay on real
+    // timers, rAF becomes deterministic and pending until flushed.
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+  }
+  function flushFrames() {
+    vi.advanceTimersToNextFrame();
+  }
+  function openerButton(): HTMLButtonElement {
+    // Its own render root: the opener persists across the modal's rerenders,
+    // exactly as page content around AssistantChat's modal does.
+    const { container } = render(<button id="trip-opener">Open results</button>);
+    return container.querySelector("#trip-opener") as HTMLButtonElement;
+  }
+  function modalTree(onClose: () => void, isOpen: boolean) {
+    return (
+      <TripResultsModal
+        isOpen={isOpen}
+        onClose={onClose}
+        destination="Miami"
+        dates={{ start: "2026-10-01", end: "2026-10-05" }}
+        adults={1}
+        flights={firstSet}
+        tripId={1}
+      />
+    );
+  }
+
+  it("keeps focus across parent re-renders and returns it to the opener on close", () => {
+    fakeRafTimers();
+
+    // 1. The opener holds focus BEFORE the modal opens — that is the element
+    //    the opener stash must remember.
+    const opener = openerButton();
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+
+    // 2. Open. The focus-to-Close frame is still pending; flush it.
+    const { rerender } = render(modalTree(() => {}, true));
+    flushFrames();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Close trip results" })
+    );
+
+    // 3. The user moves into the modal: focus on the 2nd flight checkbox.
+    const checkbox2 = screen.getAllByRole("checkbox")[1];
+    checkbox2.focus();
+    expect(document.activeElement).toBe(checkbox2);
+
+    // 4. A parent re-render arrives with a NEW inline onClose (fresh identity,
+    //    as AssistantChat produces on every keystroke while the modal sits
+    //    open), then another animation frame lands.
+    rerender(modalTree(() => {}, true));
+    flushFrames();
+
+    // 5. Focus must STILL be the checkbox — not dragged back to Close.
+    expect(document.activeElement).toBe(checkbox2);
+
+    // 6. Closing hands focus back to the ORIGINAL opener.
+    rerender(modalTree(() => {}, false));
+    flushFrames();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("closing before the open frame fires does not steal focus or throw", () => {
+    fakeRafTimers();
+
+    const opener = openerButton();
+    opener.focus();
+
+    const { rerender } = render(modalTree(() => {}, true));
+    // Close while the focus-to-Close frame is STILL pending: the cleanup must
+    // cancel the pending frame, so flushing afterwards must not fire it.
+    rerender(modalTree(() => {}, false));
+    flushFrames();
+
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("Escape invokes the latest onClose after a rerender with a new inline handler", () => {
+    fakeRafTimers();
+
+    const staleOnClose = vi.fn();
+    const latestOnClose = vi.fn();
+
+    const { rerender } = render(modalTree(staleOnClose, true));
+    flushFrames();
+
+    // The keydown listener no longer resubscribes on parent re-renders, so it
+    // must reach the CURRENT close handler through the ref at event time —
+    // never the stale identity captured at open.
+    rerender(modalTree(latestOnClose, true));
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(staleOnClose).not.toHaveBeenCalled();
+    expect(latestOnClose).toHaveBeenCalledTimes(1);
   });
 });
