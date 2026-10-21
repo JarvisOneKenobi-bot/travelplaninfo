@@ -30,7 +30,8 @@ afterEach(() => {
   // set unstubGlobals — without this the canned fetch below leaks into any later
   // test in this file.
   vi.unstubAllGlobals();
-  // Same leak class for the fake rAF timers installed by the focus tests.
+  // Same leak class for the fake rAF timers AND the rAF/cAF spies installed by
+  // the focus tests: useRealTimers + restoreAllMocks return the natives.
   vi.useRealTimers();
 });
 
@@ -371,18 +372,55 @@ describe("TripResultsModal focus survives parent re-renders", () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  // The previous revision of this test passed even with the cleanup's
+  // cancelAnimationFrame() deleted: after close, closeButtonRef.current is
+  // null, so even a MISSED (uncancelled, still-firing) frame focuses nothing
+  // and focus is back on the opener either way. This version makes the
+  // cancellation itself observable: the frame id rAF returned must be the id
+  // cAF receives, asserted while the frame is provably still pending.
   it("closing before the open frame fires does not steal focus or throw", () => {
-    fakeRafTimers();
+    // Spies, not fake timers: the scheduled callback is captured and NEVER
+    // auto-runs, so the focus frame is pending until the test itself chooses
+    // to run it. afterEach's vi.restoreAllMocks() restores the native pair.
+    const scheduled: { callback: FrameRequestCallback; id: number }[] = [];
+    let nextFrameId = 47000; // distinctive: a hardcoded/garbage id cannot collide
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        const id = nextFrameId++;
+        scheduled.push({ callback, id });
+        return id;
+      });
+    const cafSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
 
+    // The opener holds focus BEFORE the modal opens — the element the opener
+    // stash must remember.
     const opener = openerButton();
     opener.focus();
+    expect(document.activeElement).toBe(opener);
 
+    // Open: exactly one focus frame goes through rAF. The spy never runs
+    // callbacks, so the frame is STILL pending — the opener holds focus and
+    // the Close button must NOT have taken it yet.
     const { rerender } = render(modalTree(() => {}, true));
-    // Close while the focus-to-Close frame is STILL pending: the cleanup must
-    // cancel the pending frame, so flushing afterwards must not fire it.
-    rerender(modalTree(() => {}, false));
-    flushFrames();
+    expect(rafSpy).toHaveBeenCalledTimes(1);
+    const pending = scheduled[0];
 
+    // Close while the focus-to-Close frame is STILL pending: the cleanup must
+    // hand THAT exact id to cancelAnimationFrame.
+    rerender(modalTree(() => {}, false));
+    expect(cafSpy).toHaveBeenCalledTimes(1);
+    expect(cafSpy).toHaveBeenCalledWith(pending.id);
+
+    // Prove the frame was actually live right up to the close: even a stale
+    // flush that runs the recorded callback anyway must neither throw nor
+    // steal focus. (After close closeButtonRef is null, so the callback is a
+    // harmless no-op — which is exactly why an UNcancelled frame could slip
+    // past the old test: this assertion is about the opener, the id check
+    // above is what fails when the cleanup stops cancelling.)
+    expect(() => {
+      pending.callback(performance.now());
+    }).not.toThrow();
     expect(document.activeElement).toBe(opener);
   });
 
