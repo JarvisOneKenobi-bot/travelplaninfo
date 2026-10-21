@@ -14,8 +14,8 @@
  *  4. rerendering under a CHANGED key clears it.
  *
  * Test 4 only proves React's remount semantics. That AssistantChat actually
- * supplies a changing key is pinned separately, by the `key={modalSeq}` /
- * two-`setModalSeq(`-call-sites assertion in src/lib/atlas/no-fabrication.test.ts.
+ * passes key={modalSeq} into the modal is pinned separately, by the single
+ * prop-wiring assertion in src/lib/atlas/no-fabrication.test.ts.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -152,6 +152,35 @@ describe("TripResultsModal selection does not leak between result sets", () => {
     expect(screen.queryByRole("button", { name: /Add Selected/i })).toBeNull();
     expect(screen.getByRole("button", { name: /Add All to Itinerary/i })).toBeTruthy();
     expect((screen.getAllByRole("checkbox")[0] as HTMLInputElement).checked).toBe(false);
+  });
+
+  // Behavioral pin: bumping the key — what AssistantChat's modalSeq produces —
+  // must start the new modal instance with NOT ONE flight ticked. Asserts
+  // every checkbox, not just flight 0's.
+  it("a new modal instance starts with no selection", () => {
+    const { rerender } = renderModal(firstSet, 1);
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    // Pre-state proof: the tick actually happened, so the assertion below
+    // cannot pass vacuously on a component that cannot hold state.
+    expect(screen.getAllByRole("checkbox").some((c) => (c as HTMLInputElement).checked)).toBe(true);
+
+    // Same slot, key={2} — exactly what a modalSeq bump produces.
+    rerender(
+      <TripResultsModal
+        key={2}
+        isOpen
+        onClose={() => {}}
+        destination="Miami"
+        dates={{ start: "2026-10-01", end: "2026-10-05" }}
+        adults={1}
+        flights={secondSet}
+        tripId={1}
+      />
+    );
+
+    const checkboxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(checkboxes.length).toBeGreaterThan(0);
+    expect(checkboxes.every((c) => !c.checked)).toBe(true);
   });
 });
 
@@ -297,7 +326,7 @@ describe("unknown durations stay unknown", () => {
 
 // ── Focus management ────────────────────────────────────────────────────────
 //
-// AssistantChat passes an inline onClose, so it changes identity on every
+// A parent may pass an inline onClose, so it changes identity on every
 // parent render. While the selection-isolation suite above only re-renders
 // with a stable onClose, the focus effect used to key on [isOpen, onClose]:
 // every parent re-render re-ran it, restashing openerRef with whatever held

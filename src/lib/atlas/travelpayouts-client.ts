@@ -9,7 +9,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const TIMEOUT_MS = 10 * 1000;
 const RATE_LIMIT = 200;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
-import { NO_PRICE_LABEL } from "@/components/atlas/types";
+import { NO_PRICE_LABEL } from "./labels";
 export { NO_PRICE_LABEL };
 
 export interface FlightOption {

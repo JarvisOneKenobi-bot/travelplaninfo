@@ -97,7 +97,7 @@ export default function TripResultsModal({
 
   // ── Focus trap + escape key ────────────────────────────────────────────
 
-  // AssistantChat passes an inline onClose, so it changes identity on every
+  // A parent may pass an inline onClose, so it changes identity on every
   // parent render. The open effect below must NOT depend on it: it would
   // tear down and re-run on every parent re-render, restash openerRef with
   // whatever happens to hold focus at that instant (the close button this
@@ -164,8 +164,8 @@ export default function TripResultsModal({
 
   // ── Flight selection toggle ──────────────────────────────────────────
 
-  const toggleSelection = useCallback((setter: React.Dispatch<React.SetStateAction<Set<number>>>, idx: number) => {
-    setter((prev) => {
+  const toggleFlight = useCallback((idx: number) => {
+    setSelectedFlights((prev) => {
       const next = new Set(prev);
       if (next.has(idx)) next.delete(idx);
       else next.add(idx);
@@ -173,19 +173,16 @@ export default function TripResultsModal({
     });
   }, []);
 
-  const toggleFlight = useCallback((idx: number) => toggleSelection(setSelectedFlights, idx), [toggleSelection]);
-
   // ── Summary calculations ───────────────────────────────────────────────
 
+  // Single totals: the modal prices the trip at the cheapest flight × adults.
+  // There is no honest upper bound (pricedFlights excludes unknown-price rows
+  // entirely), so the former min/max pair — always equal, always rendered as a
+  // bare dollar figure — collapses into one flightTotal.
   const summary = useMemo(() => {
     const cheapestFlight = pricedFlights.length > 0 ? Math.min(...pricedFlights.map((f) => f.price_value)) : null;
-    const flightTotal = cheapestFlight !== null ? cheapestFlight * adults : null;
-    const minTotal = flightTotal;
-    const maxTotal = flightTotal;
-
     return {
-      minTotal,
-      maxTotal,
+      flightTotal: cheapestFlight !== null ? cheapestFlight * adults : null,
     };
   }, [pricedFlights, adults]);
 
@@ -491,11 +488,7 @@ export default function TripResultsModal({
                   <div className="border-t border-gray-200 pt-3 flex justify-between text-sm">
                     <span className="font-semibold text-gray-900">Flights (cheapest × adults)</span>
                     <span className="font-bold text-lg text-orange-600">
-                      {formatMoney(summary.minTotal)}
-                      {summary.maxTotal !== null &&
-                        summary.minTotal !== null &&
-                        summary.maxTotal > summary.minTotal &&
-                        ` - ${formatMoney(summary.maxTotal)}`}
+                      {formatMoney(summary.flightTotal)}
                     </span>
                   </div>
                 </div>
@@ -513,11 +506,7 @@ export default function TripResultsModal({
             <p className="text-sm text-gray-600">
               Flights (cheapest × adults){" "}
               <span className="font-bold text-gray-900">
-                {formatMoney(summary.minTotal)}
-                {summary.maxTotal !== null &&
-                  summary.minTotal !== null &&
-                  summary.maxTotal > summary.minTotal &&
-                  ` - ${formatMoney(summary.maxTotal)}`}
+                {formatMoney(summary.flightTotal)}
               </span>
             </p>
             <button
