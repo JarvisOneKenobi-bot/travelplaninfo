@@ -210,4 +210,27 @@ describe("AssistantMessageBody — inline flight cards (restored main behavior)"
     expect(flights[0]!.price_value).toBe(PRICE_UNKNOWN);
     expect(flights[0]!.duration_minutes).toBe(DURATION_UNKNOWN);
   });
+
+  it("renders without throwing a search_flights result whose flights is a non-array string", () => {
+    // extractTripData skips the non-array body (hasTripResults=false), so the
+    // message falls to ToolResultCards — which must NOT crash on it.
+    const content = `Let me look for alternatives.\n[TOOL:search_flights]${JSON.stringify({
+      flights: "upstream found nothing",
+      no_data: true,
+    })}`;
+
+    render(<AssistantMessageBody content={content} isStreaming={false} onOpenResults={onOpenResults} />);
+
+    expect(screen.queryAllByTestId("flight-card")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /Add to itinerary/i })).toBeNull();
+  });
+
+  it("renders without throwing a search_flights result whose flights is an object", () => {
+    const content = `[TOOL:search_flights]${JSON.stringify({ flights: { error: "bad shape" } })}`;
+
+    render(<AssistantMessageBody content={content} isStreaming={false} onOpenResults={onOpenResults} />);
+
+    expect(screen.queryAllByTestId("flight-card")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /Add to itinerary/i })).toBeNull();
+  });
 });

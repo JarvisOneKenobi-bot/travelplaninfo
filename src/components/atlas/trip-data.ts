@@ -14,8 +14,8 @@ import type { FlightResult } from "./types";
 
 /**
  * One parsed part of an assistant message: text, or a tool call's parsed JSON
- * `data`. Produced by parseMessageContent in AssistantChat.tsx and kept here,
- * next to `extractTripData` (the module boundary Task 6 spies on).
+ * `data`. Produced by `parseMessageContent` (defined in this same module,
+ * below) next to `extractTripData` — the module boundary Task 6 spies on.
  */
 export interface ToolResult {
   type: "text" | "tool";

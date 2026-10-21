@@ -14,7 +14,11 @@ import ArticleCard from "./ArticleCard";
 export default function ToolResultCards({ toolName, data }: { toolName: string; data: Record<string, unknown> }) {
   if (data.is_error) return null;
 
-  if (toolName === "search_flights" && data.flights) {
+  // extractTripData skips a search_flights payload whose `flights` is not an
+  // array, so this branch is reached in the no-trip-results fallback with
+  // truthy non-array bodies — Array.isArray stops `.map` crashing on them
+  // (the body falls through to the raw-JSON pre).
+  if (toolName === "search_flights" && Array.isArray(data.flights)) {
     const flights = data.flights as Array<Record<string, string>>;
     return (
       <div className="space-y-2 my-2">

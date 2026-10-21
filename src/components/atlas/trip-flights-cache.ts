@@ -9,11 +9,12 @@
  * vi.mock("./trip-data") in the counting tests observes exactly one extraction
  * per content.
  *
- * Module-level Map keyed by message content. Streaming grows one entry
- * monotonically until the message completes, so the bound only matters across
- * many distinct messages; 200 entries is far above any single session's
- * message count, and oldest-first eviction caps the worst case (revisit long
- * histories loaded via /api/assistant/history).
+ * Module-level Map keyed by message content. A streaming message's content
+ * changes with every chunk, so each streamed prefix becomes its own cache key —
+ * the map does not grow "one entry per message"; it accumulates one entry per
+ * distinct prefix while streaming, and oldest-first eviction caps the map at
+ * MAX_CACHE_ENTRIES (200) at all times (revisit long histories loaded via
+ * /api/assistant/history).
  */
 import { extractTripData, parseMessageContent } from "./trip-data";
 import type { FlightResult } from "./types";

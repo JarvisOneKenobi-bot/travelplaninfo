@@ -25,9 +25,10 @@ export function renderMarkdownLite(text: string) {
     /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
     '<a href="$2" class="text-orange-600 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>'
   );
-  // Also handle relative URLs (for TPI article links like /slug/)
+  // Also handle relative URLs (for TPI article links like /slug/); the (?!\/)
+  // lookahead rejects protocol-relative "//host" hrefs from prompt injection
   html = html.replace(
-    /\[([^\]]+)\]\((\/[^)]+)\)/g,
+    /\[([^\]]+)\]\((\/(?!\/)[^)]+)\)/g,
     '<a href="$2" class="text-orange-600 hover:underline">$1</a>'
   );
 

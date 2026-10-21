@@ -3,7 +3,7 @@ import { getUserId } from "@/lib/guest";
 import { getDb } from "@/lib/db";
 import { geocodeItem } from "@/lib/geocode";
 import { parseCost } from "@/lib/cost-utils";
-import { NO_PRICE_LABEL } from "@/components/atlas/types";
+import { NO_PRICE_LABEL } from "@/lib/atlas/labels";
 
 type Params = { params: Promise<{ id: string }> };
 
