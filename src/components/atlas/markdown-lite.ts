@@ -25,10 +25,15 @@ export function renderMarkdownLite(text: string) {
     /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
     '<a href="$2" class="text-orange-600 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>'
   );
-  // Also handle relative URLs (for TPI article links like /slug/); the (?!\/)
-  // lookahead rejects protocol-relative "//host" hrefs from prompt injection
+  // Also handle relative URLs (for TPI article links like /slug/). Strict
+  // allow-list: the href must start with exactly one "/", the next character
+  // must not be "/" (protocol-relative "//host") or "\" (browsers normalize
+  // "/\" to "//host"), and the rest of the href must contain no whitespace
+  // and no control characters (U+0000-U+001F, U+007F) — the URL parser strips
+  // tab/newline/CR, which let "/<TAB>/host" resolve to "//host" off-site —
+  // and no backslashes. Hrefs failing the allow-list stay as literal text.
   html = html.replace(
-    /\[([^\]]+)\]\((\/(?!\/)[^)]+)\)/g,
+    /\[([^\]]+)\]\((\/(?!\/|\\)[^\s\u0000-\u001F\u007F\\)]+)\)/g,
     '<a href="$2" class="text-orange-600 hover:underline">$1</a>'
   );
 
