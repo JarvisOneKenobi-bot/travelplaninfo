@@ -49,6 +49,73 @@ export function parseDurationMinutes(durationStr: string): number {
   return Number.isFinite(total) && total > 0 ? total : DURATION_UNKNOWN;
 }
 
+/**
+ * Parse an assistant message into its text and tool-call parts. Moved here
+ * from AssistantChat.tsx (Task 6) so the parse rules live beside the
+ * extraction contract and both chat lists + the sidebar share one
+ * implementation.
+ */
+export function parseMessageContent(content: string): ToolResult[] {
+  const parts: ToolResult[] = [];
+  const markerPattern = /\[TOOL:(\w+)\]/g;
+
+  let lastIndex = 0;
+  let match;
+
+  while ((match = markerPattern.exec(content)) !== null) {
+    // Text before this tool marker
+    if (match.index > lastIndex) {
+      const text = content.slice(lastIndex, match.index).trim();
+      if (text) parts.push({ type: "text", text });
+    }
+
+    const toolName = match[1];
+    const jsonStart = match.index + match[0].length;
+
+    // Find matching JSON using brace counting (handles nested objects)
+    if (jsonStart < content.length && content[jsonStart] === "{") {
+      let depth = 0;
+      let jsonEnd = jsonStart;
+      for (let i = jsonStart; i < content.length; i++) {
+        if (content[i] === "{") depth++;
+        else if (content[i] === "}") {
+          depth--;
+          if (depth === 0) { jsonEnd = i + 1; break; }
+        }
+      }
+      const jsonStr = content.slice(jsonStart, jsonEnd);
+      try {
+        const data = JSON.parse(jsonStr);
+        parts.push({ type: "tool", toolName, data });
+      } catch {
+        parts.push({ type: "text", text: match[0] + jsonStr });
+      }
+      lastIndex = jsonEnd;
+      markerPattern.lastIndex = jsonEnd;
+    } else {
+      parts.push({ type: "text", text: match[0] });
+      lastIndex = match.index + match[0].length;
+    }
+  }
+
+  // Remaining text
+  if (lastIndex < content.length) {
+    const text = content.slice(lastIndex).trim();
+    if (text) parts.push({ type: "text", text });
+  }
+
+  return parts.length > 0 ? parts : [{ type: "text", text: content }];
+}
+
+/** Get text-only summary from parsed parts (strips tool JSON) */
+export function getTextSummary(parts: ToolResult[]): string {
+  return parts
+    .filter((p) => p.type === "text")
+    .map((p) => p.text || "")
+    .join(" ")
+    .trim();
+}
+
 /** Extract typed arrays from parsed tool results */
 export function extractTripData(parts: ToolResult[]): {
   flights: FlightResult[];
