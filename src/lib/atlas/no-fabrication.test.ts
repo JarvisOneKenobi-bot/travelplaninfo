@@ -53,6 +53,9 @@ const SURPRISE_PATH_FILES = [
   "src/components/atlas/ToolResultCards.tsx",
   "src/components/atlas/markdown-lite.ts",
   "src/components/atlas/trip-flights-cache.ts",
+  // Task 6c: parseMessageContent + getTextSummary moved out of
+  // AssistantChat.tsx into trip-data.ts — the scan follows the code.
+  "src/components/atlas/trip-data.ts",
 ];
 
 const BANNED_SUBSTRINGS = [
@@ -215,6 +218,9 @@ const TRIP_RENDER_MODULES = [
   "src/components/atlas/ToolResultCards.tsx",
   "src/components/atlas/markdown-lite.ts",
   "src/components/atlas/trip-flights-cache.ts",
+  // Task 6c: owns parseMessageContent (the [TOOL:…] parser the tool gate and
+  // both consumers run through) — the live-tools scan follows the code.
+  "src/components/atlas/trip-data.ts",
 ];
 
 describe("relocated AssistantChat trip-render modules", () => {

@@ -109,6 +109,9 @@ describe("AssistantChat owns the modal reset between opens", () => {
     cleanup();
     vi.unstubAllGlobals();
     sessionStorage.clear();
+    // Tests that plant #atlas-trip-context (multi-day trip context) must not
+    // leak it into later tests' readTripContext()/openResults() reads.
+    document.getElementById("atlas-trip-context")?.remove();
   });
 
   it("open A → tick → close → open B: B starts with nothing selected", async () => {
@@ -161,5 +164,76 @@ describe("AssistantChat owns the modal reset between opens", () => {
     expect(checkboxes).toHaveLength(2);
     expect(checkboxes.every((c) => !c.checked)).toBe(true);
     expect(within(modalB).queryByRole("button", { name: /Add Selected \(\d+\) to Itinerary/i })).toBeNull();
+  });
+
+  it("multi-day trip: B's modal defaults to Day 1 with nothing selected", async () => {
+    // Task 6c (review #3 fix-up): the reset contract covers DAY state too, and
+    // a day <select> only exists when the trip context yields dayCount > 1.
+    // A five-day trip is planted before render; openResults re-reads it.
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<script id="atlas-trip-context" type="application/json">${JSON.stringify({
+        destination: "Miami",
+        dates: { start: "2026-11-01", end: "2026-11-05" },
+        adults: 2,
+        tripId: 42,
+      })}</script>`
+    );
+
+    installStreamQueue([
+      streamFor("Found 5 great options for your trip.", FIVE_A),
+      streamFor("Here are two more options.", TWO_B),
+    ]);
+    render(<AssistantChat />);
+
+    fireEvent.click(screen.getByTitle("Ask Atlas"));
+    sendChat("Find me a flight");
+    await waitFor(
+      () => {
+        expect(screen.getAllByTestId("flight-card")).toHaveLength(5);
+        expect(screen.getAllByRole("button", { name: /Add to itinerary/i })).toHaveLength(1);
+      },
+      { timeout: 5000 }
+    );
+
+    // Open results A and assign day 3 to its first flight
+    fireEvent.click(screen.getByRole("button", { name: /Add to itinerary/i }));
+    const modalA = await screen.findByRole("dialog");
+    expect(await within(modalA).findByRole("button", { name: /Add All to Itinerary/i })).toBeTruthy();
+
+    const daySelectA = within(modalA).getAllByRole("combobox")[0] as HTMLSelectElement;
+    // Pre-state proof: day selects render and default to Day 1 before we touch them
+    expect(daySelectA.value).toBe("1");
+    fireEvent.change(daySelectA, { target: { value: "3" } });
+    expect(daySelectA.value).toBe("3"); // cannot pass vacuously
+    // …and a selection is ticked as well, so both leak surfaces are poisoned
+    fireEvent.click(within(modalA).getAllByRole("checkbox")[0]);
+    expect(within(modalA).getByRole("button", { name: /Add Selected \(1\) to Itinerary/i })).toBeTruthy();
+
+    // Close set A
+    fireEvent.click(screen.getByRole("button", { name: "Close trip results" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Stream + open set B
+    sendChat("Find me another");
+    await waitFor(() => expect(screen.getAllByTestId("flight-card")).toHaveLength(7), { timeout: 5000 });
+    fireEvent.click(screen.getAllByRole("button", { name: /Add to itinerary/i })[1]);
+
+    const modalB = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(modalB).getByText("AirOmega")).toBeTruthy());
+    expect(within(modalB).queryByText("AirAlpha")).toBeNull();
+
+    // 1) Selection cleared in B: a fresh modal instance has NOT ONE flight ticked.
+    const checkboxesB = within(modalB).getAllByRole("checkbox") as HTMLInputElement[];
+    expect(checkboxesB).toHaveLength(2);
+    expect(checkboxesB.every((c) => !c.checked)).toBe(true);
+    expect(within(modalB).queryByRole("button", { name: /Add Selected \(\d+\) to Itinerary/i })).toBeNull();
+
+    // 2) Day reset: every row defaults back to Day 1. If openResults stopped
+    // bumping modalSeq, the still-mounted modal instance would leak A's Day 3
+    // assignment into B here (leaked day 3 — the mutation check).
+    const dayValues = (within(modalB).getAllByRole("combobox") as HTMLSelectElement[]).map((s) => s.value);
+    expect(dayValues).toHaveLength(2);
+    expect(dayValues.every((v) => v === "1")).toBe(true);
   });
 });
