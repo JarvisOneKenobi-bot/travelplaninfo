@@ -34,7 +34,7 @@ export const HELP_CONTENT: Record<string, HelpPageContent> = {
     title: "Your Trip Itinerary",
     intro: "Build your day-by-day travel plan with Atlas, your AI travel concierge.",
     sections: [
-      { heading: "Getting started", text: "Your itinerary opens with a placeholder row per day. Atlas does not search on its own — ask it in chat, or add items yourself." },
+      { heading: "Getting started", text: "Your itinerary opens with a placeholder row per day. Atlas searches only when you ask it in chat or tap \"Start smart search\" — or add items yourself." },
       { heading: "Adding items", text: "Click '+ Add Item' on any day to add flights, hotels, activities, dining, restaurants, or transportation. Click an item to edit its title, description, or budget tier. Changes save instantly." },
       { heading: "Flight search", text: "Ask for flights in chat and Atlas searches live flight prices for your route and dates. Results open in a window where you can sort, pick flights, assign each one to a day, and add them to the itinerary in one go." },
       { heading: "Hotels, activities, restaurants", text: "Atlas does not have live inventory for these. It gives practical guidance — neighborhoods, price expectations, what to look for — and a trusted partner search link. It never invents listings or prices." },

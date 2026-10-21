@@ -1,0 +1,90 @@
+[
+  {
+    "sha256": "cb957ada4874138402718d0a1c9d7dbb6ecba46cede795781c56de58b7536baf",
+    "text": "Create an account to unlock personalized trip planning, deal alerts, and Atlas — your AI travel concierge"
+  },
+  {
+    "sha256": "2dd7628b0aa58c5868bf9593c0879b890eebbb2b6625294d468532c22e8dfa55",
+    "text": "Enter your destination, or click 'Surprise Me' to let Atlas suggest destinations based on your interests and budget"
+  },
+  {
+    "sha256": "b4b0695ef58ba383518f7f39c6fee43adef1945b912b2b7948e53d3492d6132c",
+    "text": "At least 2 interests are required so Atlas knows what to recommend"
+  },
+  {
+    "sha256": "ca9114d4c6605eb5597a82510b82e5a9068f9170b282813ccdabbcab40c78966",
+    "text": "Set your travel dates, or check 'I'm flexible' to let Atlas find the cheapest dates"
+  },
+  {
+    "sha256": "0b7995caed5cdf37094b34c12c75e5f1914b3dfd3dae03a7cf058f4502e1a1be",
+    "text": "Or click 'Let Atlas find the cheapest dates' to let Atlas pick the absolute best deal regardless of timing"
+  },
+  {
+    "sha256": "9442b956322995e59aa8ef447264160b15e1279d3d2b5e7b789f02832446bd72",
+    "text": "Pick activities you enjoy — Atlas uses these to suggest daily itinerary activities"
+  },
+  {
+    "sha256": "b49ccac747e3f0326d30d76d24944533d575ab4535503f96c5022af371c51150",
+    "text": "Selecting 'Atlas Recommends' (formerly 'Let Atlas decide') doesn't replace your interests — it tells Atlas to also suggest activities outside your picks if they're a great fit for your destination"
+  },
+  {
+    "sha256": "2774ebb77e03218529dccd653ef7b85b134478dff1ed90f376387294cc45d031",
+    "text": "Atlas will suggest creating a free account after you've built up your itinerary so you can keep it forever"
+  },
+  {
+    "sha256": "661fc0e05b331fdee15c625b9ac2711909516dcaaa8bee3c5e0c554cb821d586",
+    "text": "Build your day-by-day travel plan with Atlas, your AI travel concierge"
+  },
+  {
+    "sha256": "96b627ec51f9654c194eda0a3d4c4a00591cc5f5ffecd52d59e33d6362658d21",
+    "text": "Atlas searches only when you ask it in chat or tap \"Start smart search\" — or add items yourself"
+  },
+  {
+    "sha256": "0d2cec20d866113f2f6aba70707134d2ede0ee561737df04a3aa371d63a6fcf8",
+    "text": "Ask for flights in chat and Atlas searches live flight prices for your route and dates"
+  },
+  {
+    "sha256": "7498d42646f62ec22d0d938631e2d7ba93e0adb2467544a7899bf197e657fa77",
+    "text": "Atlas does not have live inventory for these"
+  },
+  {
+    "sha256": "14f358a666932b0f5a543ab4cd810a3a126307c05c430ed4d42480228aa70b37",
+    "text": "Ask Atlas anything about your trip — Atlas searches live flight prices, current flight deals, TPI destination guides, and surprise destination ideas"
+  },
+  {
+    "sha256": "138ef178b2cdacec8b4d3ce015f135cc407ba699f2dee8f76a72aa16f963e352",
+    "text": "Atlas knows what's already in your itinerary and suggests complementary ideas"
+  },
+  {
+    "sha256": "0fa1e22d7c8b933c2dba817ca456d11275fe264dfd87a524649a27fffcf218df",
+    "text": "If Atlas reaches its monthly usage limit, it pauses until next month and says so honestly"
+  },
+  {
+    "sha256": "2a599283594f41dda917f35a8a123e32c8ffd2a6195d499260c449c69dec7781",
+    "text": "If no destination fits every vibe you picked, Atlas says so honestly and offers real ways forward: match any of your vibes instead of all of them, try a different month, or ask Atlas in chat — it already knows your starting city, month, and vibes"
+  },
+  {
+    "sha256": "009fc3f52224b0cdc978ebfeccea13a20f654c0d0d9c3821493c5fb873b67886",
+    "text": "Atlas never fills the gap with made-up destinations or prices"
+  },
+  {
+    "sha256": "42d35a95f1f22b00c04bda8e04498b41c3a199dd2ab0dfce227b958563f40daa",
+    "text": "Customize how Atlas and TPI work for you"
+  },
+  {
+    "sha256": "50f9ff1598c04ebeb2f3fdcfeb8a27009d4f22e6258d3e503838d7926b3596d6",
+    "text": "Atlas uses this to search flights from your location"
+  },
+  {
+    "sha256": "3996443ef9747599266df634a94f81f9880e34874c086ee3f2e9d2ffb8d74a4d",
+    "text": "'Let Atlas decide' works alongside your picks — it tells Atlas to also suggest things outside your selections"
+  },
+  {
+    "sha256": "6676732b70d1467734235350ceebce191fe376e62c33d6e9ac61b3d5d0df2f36",
+    "text": "Choose how Atlas communicates: concise (quick answers), detailed (thorough explanations), or friendly (casual tone)"
+  },
+  {
+    "sha256": "3600c892ae433e279b816affbd2495e5a6028363a4dad529c89a633aa2e1ef61",
+    "text": "The Planner and Atlas search live flight prices once they know your origin and dates, and partner sites show real current prices when you click through"
+  }
+]
