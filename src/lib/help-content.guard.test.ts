@@ -61,7 +61,9 @@ describe("help copy only claims capabilities in the live tool registry", () => {
 
 // ---------------------------------------------------------------------------
 // Atlas approved-sentence guard (review #8/#9; case-insensitive fix-up per
-// the consensus review of 87a9120).
+// the consensus review of 87a9120; executable-generator fix-up per the
+// consensus review of a026cba — the generator is real code sharing every
+// helper with the checker, so the two cannot drift).
 // Rule: every sentence in HELP_CONTENT (intro + section text, split on .!?;)
 // that names Atlas in ANY casing (lowercase, UPPER, mixed — the shared
 // IS_ATLAS /atlas/i test below) must have its SHA-256 in
@@ -70,31 +72,23 @@ describe("help copy only claims capabilities in the live tool registry", () => {
 // tool-domain checks above stay in place as a second layer.
 //
 // Hash normalization (the exact string hashed, per plan amendment):
-//   1. split the intro/section text on /[.!?;]/ (the plan's sentence set),
+//   1. split the intro/section text on the plan's sentence delimiters (the
+//      .!?; character set),
 //   2. Unicode NFC-normalize,
 //   3. collapse every whitespace run to a single space,
 //   4. trim leading/trailing whitespace.
 // The stored sha256 is the lowercase hex SHA-256 over those UTF-8 bytes.
 //
-// Regenerate src/lib/help-content.atlas-approved.json (AFTER human review of
-// every printed sentence) from the repo root with:
-//   node --experimental-strip-types --input-type=module -e "<script>"
-// where <script> is:
-//   const { HELP_CONTENT } = await import('./src/lib/help-content.ts');
-//   const { createHash } = await import('node:crypto');
-//   const { writeFileSync } = await import('node:fs');
-//   const norm = (s) => s.normalize('NFC').replace(/\s+/g, ' ').trim();
-//   const atlas = [...new Set(Object.values(HELP_CONTENT)
-//     .flatMap((p) => [p.intro, ...p.sections.map((x) => x.text)])
-//     .flatMap((t) => t.split(/[.!?;]/))
-//     .map(norm)
-//     .filter((s) => /atlas/i.test(s)))]; // MUST stay identical to IS_ATLAS
-//   const entries = atlas.map((text) => ({
-//     sha256: createHash('sha256').update(text, 'utf-8').digest('hex'),
-//     text,
-//   }));
-//   writeFileSync('src/lib/help-content.atlas-approved.json',
-//     JSON.stringify(entries, null, 2) + '\n');
+// Regeneration (documented, executable — it CALLS the generator, it does not
+// re-implement it): after human review of every printed sentence, run the
+// exported generateApprovedEntries below — the module's ONLY generator — with
+//   generateApprovedEntries(Object.values(HELP_CONTENT))
+// and write `JSON.stringify(entries, null, 2) + "\n"` over
+// src/lib/help-content.atlas-approved.json. The generator goes through the
+// SAME splitSentences / normalizeSentence / isAtlasSentence helpers (and the
+// IS_ATLAS predicate) as the checker, so the two cannot drift. The
+// generator-equality test below is the drift check: it fails unless the
+// checked-in JSON is exactly that output.
 // The per-entry integrity check below recomputes each hash with THIS file's
 // normalizer, so a generator that drifts from this normalization fails.
 // ---------------------------------------------------------------------------
@@ -107,17 +101,43 @@ function normalizeSentence(sentence: string): string {
   return sentence.normalize("NFC").replace(/\s+/g, " ").trim();
 }
 
-// Shared "contains atlas" test, CASE-INSENSITIVE. The checker's
-// atlasSentences() and the generator script documented in the comment above
-// must use the SAME /atlas/i test on the normalized sentence; casing is NOT
+// ONE shared sentence pipeline (split → normalize → Atlas test): the checker
+// (atlasSentences/findUnapproved) and the generator (generateApprovedEntries
+// below) share EVERY piece of it — the a026cba fix-up removed the last set of
+// duplicate literals, the generator script that lived in the comment above
+// with its own normalization, split and /atlas/i — so the two can no longer
+// disagree by construction: there is only ONE of each in this module.
+
+// Shared "contains atlas" test, CASE-INSENSITIVE. Every caller — the
+// checker's atlasSentences()/findUnapproved() and the generator's
+// generateApprovedEntries() — goes through isAtlasSentence(); casing is NOT
 // folded into the hash normalization, so the approved hashes stay valid.
 const IS_ATLAS = /atlas/i;
 
+function isAtlasSentence(sentence: string): boolean {
+  return IS_ATLAS.test(sentence);
+}
+
+function splitSentences(texts: string[]): string[] {
+  return texts.flatMap((t) => t.split(/[.!?;]/));
+}
+
 function atlasSentences(texts: string[]): string[] {
-  return texts
-    .flatMap((t) => t.split(/[.!?;]/))
-    .map(normalizeSentence)
-    .filter((s) => IS_ATLAS.test(s));
+  return splitSentences(texts).map(normalizeSentence).filter(isAtlasSentence);
+}
+
+// The approved-sentence GENERATOR: the SAME shared pipeline as the checker
+// (splitSentences → normalizeSentence → isAtlasSentence), deduped in
+// first-occurrence order, hashed with the same sha256Hex. The
+// generator-equality test below pins the checked-in JSON to this exact
+// output, so the file can only be refreshed by calling this function after
+// human review — never by hand-editing a hash.
+export function generateApprovedEntries(
+  content: HelpPageContent[],
+): Array<{ sha256: string; text: string }> {
+  const texts = content.flatMap((p) => [p.intro, ...p.sections.map((s) => s.text)]);
+  const sentences = [...new Set(atlasSentences(texts))];
+  return sentences.map((text) => ({ sha256: sha256Hex(text), text }));
 }
 
 function approvedEntries(): Array<{ sha256: string; text: string }> {
@@ -141,6 +161,15 @@ describe("Atlas approved-sentence guard", () => {
     for (const entry of entries) {
       expect(sha256Hex(normalizeSentence(entry.text)), `approved entry drifted: "${entry.text}"`).toBe(entry.sha256);
     }
+  });
+
+  it("the approved JSON equals what the generator produces from today's HELP_CONTENT", () => {
+    // Drift check (executable-source-of-truth fix-up for a026cba): the
+    // checked-in approvals must be EXACTLY the current generator output —
+    // same entries, same order, same sha256s and texts. A copy edit reaches
+    // the JSON only through the generator (human review + regenerate), never
+    // by hand-editing a hash.
+    expect(approvedEntries()).toEqual(generateApprovedEntries(Object.values(HELP_CONTENT)));
   });
 
   it("an unapproved Atlas sentence fails", () => {
@@ -201,7 +230,10 @@ describe("Atlas approved-sentence guard", () => {
 });
 
 // The plan-mandated exported checker: one offender per sentence in `texts`
-// whose Atlas sentence is not covered by the approved hash set.
+// whose Atlas sentence is not covered by the approved hash set. It shares the
+// splitSentences/normalizeSentence/isAtlasSentence pipeline with
+// generateApprovedEntries above — the generator-equality test keeps the two
+// provably in lockstep.
 export function findUnapproved(texts: string[], approved: Set<string>): string[] {
   return atlasSentences(texts).filter((s) => !approved.has(sha256Hex(s)));
 }
