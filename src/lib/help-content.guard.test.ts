@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HELP_CONTENT } from "./help-content";
+import { HELP_CONTENT, type HelpPageContent } from "./help-content";
 import { TOOLS, TOOL_DOMAIN } from "./atlas/tool-loop";
 
 // Sentences that attribute a search/lookup capability to Atlas.
@@ -60,9 +60,11 @@ describe("help copy only claims capabilities in the live tool registry", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Atlas approved-sentence guard (review #8/#9).
+// Atlas approved-sentence guard (review #8/#9; case-insensitive fix-up per
+// the consensus review of 87a9120).
 // Rule: every sentence in HELP_CONTENT (intro + section text, split on .!?;)
-// that names "Atlas" must have its SHA-256 in
+// that names Atlas in ANY casing (lowercase, UPPER, mixed — the shared
+// IS_ATLAS /atlas/i test below) must have its SHA-256 in
 // src/lib/help-content.atlas-approved.json — a NEW or EDITED Atlas sentence
 // fails these tests until a human regenerates (and reviews) the file. The
 // tool-domain checks above stay in place as a second layer.
@@ -86,7 +88,7 @@ describe("help copy only claims capabilities in the live tool registry", () => {
 //     .flatMap((p) => [p.intro, ...p.sections.map((x) => x.text)])
 //     .flatMap((t) => t.split(/[.!?;]/))
 //     .map(norm)
-//     .filter((s) => s.includes('Atlas')))];
+//     .filter((s) => /atlas/i.test(s)))]; // MUST stay identical to IS_ATLAS
 //   const entries = atlas.map((text) => ({
 //     sha256: createHash('sha256').update(text, 'utf-8').digest('hex'),
 //     text,
@@ -105,11 +107,17 @@ function normalizeSentence(sentence: string): string {
   return sentence.normalize("NFC").replace(/\s+/g, " ").trim();
 }
 
+// Shared "contains atlas" test, CASE-INSENSITIVE. The checker's
+// atlasSentences() and the generator script documented in the comment above
+// must use the SAME /atlas/i test on the normalized sentence; casing is NOT
+// folded into the hash normalization, so the approved hashes stay valid.
+const IS_ATLAS = /atlas/i;
+
 function atlasSentences(texts: string[]): string[] {
   return texts
     .flatMap((t) => t.split(/[.!?;]/))
     .map(normalizeSentence)
-    .filter((s) => s.includes("Atlas"));
+    .filter((s) => IS_ATLAS.test(s));
 }
 
 function approvedEntries(): Array<{ sha256: string; text: string }> {
@@ -144,6 +152,42 @@ describe("Atlas approved-sentence guard", () => {
       approved,
     );
     expect(offenders).toHaveLength(3);
+  });
+
+  it("the Atlas detection is case-insensitive (atlas/ATLAS/aTlAs all checked)", () => {
+    // Consensus-review fix-up for 87a9120: the old case-sensitive
+    // includes("Atlas") never checked lowercase or mixed-case spellings, so
+    // "atlas helps you book hotels" bypassed the approved-sentence guard.
+    // Every casing now yields one offender per unapproved sentence.
+    const approved = new Set(approvedEntries().map((e) => e.sha256));
+    const offenders = findUnapproved(
+      ["atlas helps you book hotels.", "ATLAS searches hotels", "Use aTlAs to compare hotel prices."],
+      approved,
+    );
+    expect(offenders).toHaveLength(3);
+  });
+
+  it("a lowercase atlas sentence injected into HELP_CONTENT fails the approval check", () => {
+    // HELP_CONTENT-level regression, same style as the test above: the
+    // sentence is injected at run time into a COPY of HELP_CONTENT
+    // (help-content.ts itself is untouched) and the approval check over the
+    // copy's page texts must flag the lowercase claim sentence.
+    const approved = new Set(approvedEntries().map((e) => e.sha256));
+    const injected: Record<string, HelpPageContent> = {
+      ...HELP_CONTENT,
+      "atlas-case-regression-injection": {
+        ...HELP_CONTENT["home"],
+        title: "temporary run-time injection, never rendered",
+        intro: "atlas will find your flight.",
+        sections: [],
+      },
+    };
+    const offenders: string[] = [];
+    for (const [pageId, page] of Object.entries(injected)) {
+      const texts = [page.intro, ...page.sections.map((s) => s.text)];
+      offenders.push(...findUnapproved(texts, approved).map((s) => `${pageId}: "${s}"`));
+    }
+    expect(offenders).toEqual([`atlas-case-regression-injection: "atlas will find your flight"`]);
   });
 
   it("getting-started copy names smart search", () => {
