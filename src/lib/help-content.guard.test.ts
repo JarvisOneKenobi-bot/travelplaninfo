@@ -1,0 +1,306 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { HELP_CONTENT, type HelpPageContent } from "./help-content";
+import { TOOLS, TOOL_DOMAIN } from "./atlas/tool-loop";
+
+// Sentences that attribute a search/lookup capability to Atlas.
+// Both the bare and conjugated verb forms count: "Atlas will search hotels" is
+// the same promise as "Atlas searches hotels", and the modal auxiliaries are
+// where the claim usually hides.
+const CLAIM_RE =
+  /\bAtlas\s+(?:(?:can|will|automatically|also)\s+)?(?:search(?:es)?|find(?:s)?|look(?:s)? up|pull(?:s)?|fetch(?:es)?)\b[^.;!]*/gi;
+// Nouns a claim can name. Anything here that is not a live tool domain fails.
+const NOUN_RE = /\b(flights?|hotels?|activities|activity|restaurants?|deals?|guides?|articles?|destinations?|tours?|cars?|rentals?|prices?)\b/gi;
+
+const NORMALIZE: Record<string, string> = {
+  flights: "flight", hotels: "hotel", activities: "activity", restaurants: "restaurant",
+  deals: "deal", guides: "guide", articles: "guide", article: "guide", destinations: "destination",
+  tours: "activity", cars: "car", rentals: "rental", prices: "flight", price: "flight",
+};
+
+function liveDomains(): Set<string> {
+  return new Set(TOOLS.map((t) => TOOL_DOMAIN[t.name]));
+}
+
+describe("help copy only claims capabilities in the live tool registry", () => {
+  it("every registered tool has a domain label", () => {
+    for (const t of TOOLS) expect(TOOL_DOMAIN[t.name], `TOOL_DOMAIN missing ${t.name}`).toBeTruthy();
+  });
+
+  it("no help sentence attributes a search to Atlas for a domain with no tool", () => {
+    const live = liveDomains();
+    const offenders: string[] = [];
+    for (const [pageId, page] of Object.entries(HELP_CONTENT)) {
+      const texts = [page.intro, ...page.sections.map((s) => s.text)];
+      for (const text of texts) {
+        for (const claim of text.match(CLAIM_RE) ?? []) {
+          for (const raw of claim.match(NOUN_RE) ?? []) {
+            const noun = NORMALIZE[raw.toLowerCase()] ?? raw.toLowerCase();
+            if (!live.has(noun)) offenders.push(`${pageId}: "${claim.trim()}" names "${raw}"`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("regression pins for the 2026-09-11 finding", () => {
+    const all = JSON.stringify(HELP_CONTENT);
+    expect(all).not.toContain("tabs for Flights, Hotels");
+    expect(all).not.toContain("searches for flights, hotels, and activities");
+    // exact old string only — hot-deals legitimately says "partner sites show real current prices"
+    expect(all).not.toContain("practical tips, current prices");
+    // nothing in src/ or messages/ renders an "(estimated)" marker any more
+    expect(all).not.toContain("(estimated)");
+    const bubble = readFileSync(resolve(process.cwd(), "src/hooks/useAtlasBubble.ts"), "utf-8");
+    expect(bubble).not.toContain("hotels, or activities");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Atlas approved-sentence guard (review #8/#9; case-insensitive fix-up per
+// the consensus review of 87a9120; executable-generator fix-up per the
+// consensus review of a026cba — the generator is real code sharing every
+// helper with the checker, so the two cannot drift).
+// Rule: every sentence in HELP_CONTENT (intro + section text, split on .!?;)
+// that names Atlas in ANY casing (lowercase, UPPER, mixed — the shared
+// IS_ATLAS /atlas/i test below) must have its SHA-256 in
+// src/lib/help-content.atlas-approved.json — a NEW or EDITED Atlas sentence
+// fails these tests until a human regenerates (and reviews) the file. The
+// tool-domain checks above stay in place as a second layer.
+//
+// Hash normalization (the exact string hashed, per plan amendment):
+//   1. split the intro/section text on the plan's sentence delimiters (the
+//      .!?; character set),
+//   2. Unicode NFC-normalize,
+//   3. collapse every whitespace run to a single space,
+//   4. trim leading/trailing whitespace.
+// The stored sha256 is the lowercase hex SHA-256 over those UTF-8 bytes.
+//
+// Regeneration (documented, executable — it CALLS the generator, it does not
+// re-implement it): after human review of every printed sentence, run the
+// exported generateApprovedEntries below — the module's ONLY generator — with
+//   generateApprovedEntries(Object.values(HELP_CONTENT))
+// and write `JSON.stringify(entries, null, 2) + "\n"` over
+// src/lib/help-content.atlas-approved.json. The generator goes through the
+// SAME splitSentences / normalizeSentence / isAtlasSentence helpers (and the
+// IS_ATLAS predicate) as the checker, so the two cannot drift. The
+// generator-equality test below is the drift check: it fails unless the
+// checked-in JSON is exactly that output.
+// The per-entry integrity check below recomputes each hash with THIS file's
+// normalizer, so a generator that drifts from this normalization fails.
+// ---------------------------------------------------------------------------
+
+function sha256Hex(text: string): string {
+  return createHash("sha256").update(text, "utf-8").digest("hex");
+}
+
+function normalizeSentence(sentence: string): string {
+  return sentence.normalize("NFC").replace(/\s+/g, " ").trim();
+}
+
+// ONE shared sentence pipeline (split → normalize → Atlas test): the checker
+// (atlasSentences/findUnapproved) and the generator (generateApprovedEntries
+// below) share EVERY piece of it — the a026cba fix-up removed the last set of
+// duplicate literals, the generator script that lived in the comment above
+// with its own normalization, split and /atlas/i — so the two can no longer
+// disagree by construction: there is only ONE of each in this module.
+
+// Shared "contains atlas" test, CASE-INSENSITIVE. Every caller — the
+// checker's atlasSentences()/findUnapproved() and the generator's
+// generateApprovedEntries() — goes through isAtlasSentence(); casing is NOT
+// folded into the hash normalization, so the approved hashes stay valid.
+const IS_ATLAS = /atlas/i;
+
+function isAtlasSentence(sentence: string): boolean {
+  return IS_ATLAS.test(sentence);
+}
+
+function splitSentences(texts: string[]): string[] {
+  return texts.flatMap((t) => t.split(/[.!?;]/));
+}
+
+function atlasSentences(texts: string[]): string[] {
+  return splitSentences(texts).map(normalizeSentence).filter(isAtlasSentence);
+}
+
+// The approved-sentence GENERATOR: the SAME shared pipeline as the checker
+// (splitSentences → normalizeSentence → isAtlasSentence), deduped in
+// first-occurrence order, hashed with the same sha256Hex. The
+// generator-equality test below pins the checked-in JSON to this exact
+// output, so the file can only be refreshed by calling this function after
+// human review — never by hand-editing a hash.
+export function generateApprovedEntries(
+  content: HelpPageContent[],
+): Array<{ sha256: string; text: string }> {
+  const texts = content.flatMap((p) => [p.intro, ...p.sections.map((s) => s.text)]);
+  const sentences = [...new Set(atlasSentences(texts))];
+  return sentences.map((text) => ({ sha256: sha256Hex(text), text }));
+}
+
+function approvedEntries(): Array<{ sha256: string; text: string }> {
+  return JSON.parse(readFileSync(resolve(process.cwd(), "src/lib/help-content.atlas-approved.json"), "utf-8"));
+}
+
+describe("Atlas approved-sentence guard", () => {
+  it("every Atlas sentence is on the approved list", () => {
+    const entries = approvedEntries();
+    const approved = new Set(entries.map((e) => e.sha256));
+    const offenders: string[] = [];
+    for (const [pageId, page] of Object.entries(HELP_CONTENT)) {
+      const texts = [page.intro, ...page.sections.map((s) => s.text)];
+      for (const sentence of atlasSentences(texts)) {
+        if (!approved.has(sha256Hex(sentence))) offenders.push(`${pageId}: "${sentence}"`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    // File integrity: an entry whose stored text no longer hashes to its own
+    // sha256 means the file was hand-edited without rehashing.
+    for (const entry of entries) {
+      expect(sha256Hex(normalizeSentence(entry.text)), `approved entry drifted: "${entry.text}"`).toBe(entry.sha256);
+    }
+  });
+
+  it("the approved JSON equals what the generator produces from today's HELP_CONTENT", () => {
+    // Drift check (executable-source-of-truth fix-up for a026cba): the
+    // checked-in approvals must be EXACTLY the current generator output —
+    // same entries, same order, same sha256s and texts. A copy edit reaches
+    // the JSON only through the generator (human review + regenerate), never
+    // by hand-editing a hash.
+    expect(approvedEntries()).toEqual(generateApprovedEntries(Object.values(HELP_CONTENT)));
+  });
+
+  it("an unapproved Atlas sentence fails", () => {
+    // Sentences that never shipped are not in the approved set: the exported
+    // checker must return one offender per unapproved Atlas sentence.
+    const approved = new Set(approvedEntries().map((e) => e.sha256));
+    const offenders = findUnapproved(
+      ["Use Atlas to compare hotel prices.", "Atlas helps you book hotels.", "Search hotels and activities with Atlas."],
+      approved,
+    );
+    expect(offenders).toHaveLength(3);
+  });
+
+  it("the Atlas detection is case-insensitive (atlas/ATLAS/aTlAs all checked)", () => {
+    // Consensus-review fix-up for 87a9120: the old case-sensitive
+    // includes("Atlas") never checked lowercase or mixed-case spellings, so
+    // "atlas helps you book hotels" bypassed the approved-sentence guard.
+    // Every casing now yields one offender per unapproved sentence.
+    const approved = new Set(approvedEntries().map((e) => e.sha256));
+    const offenders = findUnapproved(
+      ["atlas helps you book hotels.", "ATLAS searches hotels", "Use aTlAs to compare hotel prices."],
+      approved,
+    );
+    expect(offenders).toHaveLength(3);
+  });
+
+  it("a lowercase atlas sentence injected into HELP_CONTENT fails the approval check", () => {
+    // HELP_CONTENT-level regression, same style as the test above: the
+    // sentence is injected at run time into a COPY of HELP_CONTENT
+    // (help-content.ts itself is untouched) and the approval check over the
+    // copy's page texts must flag the lowercase claim sentence.
+    const approved = new Set(approvedEntries().map((e) => e.sha256));
+    const injected: Record<string, HelpPageContent> = {
+      ...HELP_CONTENT,
+      "atlas-case-regression-injection": {
+        ...HELP_CONTENT["home"],
+        title: "temporary run-time injection, never rendered",
+        intro: "atlas will find your flight.",
+        sections: [],
+      },
+    };
+    const offenders: string[] = [];
+    for (const [pageId, page] of Object.entries(injected)) {
+      const texts = [page.intro, ...page.sections.map((s) => s.text)];
+      offenders.push(...findUnapproved(texts, approved).map((s) => `${pageId}: "${s}"`));
+    }
+    expect(offenders).toEqual([`atlas-case-regression-injection: "atlas will find your flight"`]);
+  });
+
+  it("getting-started copy names smart search", () => {
+    const common = JSON.parse(readFileSync(resolve(process.cwd(), "messages/en/common.json"), "utf-8"));
+    const gettingStarted = HELP_CONTENT["planner-itinerary"].sections.find((s) => s.heading === "Getting started");
+    expect(gettingStarted, "Getting started section missing").toBeTruthy();
+    const text = gettingStarted?.text ?? "";
+    expect(text).toContain(common.atlasSmartSearch.start);
+    expect(text).not.toContain("does not search on its own");
+  });
+});
+
+// The plan-mandated exported checker: one offender per sentence in `texts`
+// whose Atlas sentence is not covered by the approved hash set. It shares the
+// splitSentences/normalizeSentence/isAtlasSentence pipeline with
+// generateApprovedEntries above — the generator-equality test keeps the two
+// provably in lockstep.
+export function findUnapproved(texts: string[], approved: Set<string>): string[] {
+  return atlasSentences(texts).filter((s) => !approved.has(sha256Hex(s)));
+}
+
+// The itinerary "flights, hotels, and activities" promise lived in SIX translated
+// files as well as in the components, and the consent chip asked the user to
+// approve exactly that search. Copy fixed only in `en` would still ship the
+// promise to five locales, so pin every locale — each phrase is checked against
+// every file, so a phrase migrating between locales fails too.
+const FORBIDDEN_LOCALE_PHRASES = [
+  "hotels, and activities",
+  "hotels, or activities",
+  "Hotels und Aktivitäten",
+  "Hotels oder Aktivitäten",
+  "hoteles y actividades",
+  "hoteles o actividades",
+  "hôtels et activités",
+  "hôtels ou activités",
+  "hotel e attività",
+  "hotel o attività",
+  "hotéis e atividades",
+  "hotéis ou atividades",
+];
+
+/** Every string value in a nested translation object, with its dotted key path. */
+function flattenStrings(node: unknown, path = ""): Array<[string, string]> {
+  if (typeof node === "string") return [[path, node]];
+  if (node === null || typeof node !== "object") return [];
+  return Object.entries(node as Record<string, unknown>).flatMap(([k, v]) =>
+    flattenStrings(v, path ? `${path}.${k}` : k)
+  );
+}
+
+describe("no locale promises hotel/activity search", () => {
+  const messagesDir = resolve(process.cwd(), "messages");
+  const locales = readdirSync(messagesDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+
+  it("finds the locale files (guard cannot pass by scanning nothing)", () => {
+    expect(locales.length).toBeGreaterThanOrEqual(6);
+  });
+
+  // Scan PARSED, NFC-NORMALIZED values — never the raw file text
+  // (feedback_scan_parsed_values_not_serialized). Two ways the same rendered
+  // sentence hides from a naive scan, both of which a translation tool
+  // round-tripping this file will happily emit:
+  //   1. the umlaut written as a JSON \u escape — valid JSON, renders identically,
+  //      and the raw bytes never contain the accented phrase;
+  //   2. the umlaut stored DECOMPOSED (plain a + combining diaeresis U+0308) —
+  //      byte-different from the composed form, visually and semantically identical.
+  // JSON.parse handles (1); normalizing both sides to NFC handles (2).
+  const nfc = (s: string) => s.normalize("NFC");
+  const forbidden = FORBIDDEN_LOCALE_PHRASES.map(nfc);
+
+  it.each(locales)("messages/%s/common.json claims no hotel or activity search", (locale) => {
+    const raw = readFileSync(resolve(messagesDir, locale, "common.json"), "utf-8");
+    const entries = flattenStrings(JSON.parse(raw));
+
+    expect(entries.length, `messages/${locale}/common.json produced no strings to scan`).toBeGreaterThan(0);
+
+    const offenders = entries.flatMap(([key, value]) =>
+      forbidden
+        .filter((phrase) => nfc(value).includes(phrase))
+        .map((phrase) => `${locale}: ${key} contains "${phrase}"`)
+    );
+
+    expect(offenders).toEqual([]);
+  });
+});

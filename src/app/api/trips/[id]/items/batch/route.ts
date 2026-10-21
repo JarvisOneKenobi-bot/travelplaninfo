@@ -3,6 +3,7 @@ import { getUserId } from "@/lib/guest";
 import { getDb } from "@/lib/db";
 import { geocodeItem } from "@/lib/geocode";
 import { parseCost } from "@/lib/cost-utils";
+import { NO_PRICE_LABEL } from "@/lib/atlas/labels";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -31,7 +32,7 @@ interface BatchItem {
   category?: string;
   title?: string;
   description?: string;
-  price_estimate?: string;
+  price_estimate?: string | null;
   affiliate_url?: string;
   is_placeholder?: number;
 }
@@ -161,7 +162,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     const rows = items.map((item, i) => {
-      const priceEstimate = item.price_estimate?.trim() || null;
+      const rawPrice = item.price_estimate?.trim() || null;
+      // "—" (NO_PRICE_LABEL) is a display-only label produced upstream when
+      // the price is unknown; persisted, it would make every itinerary row
+      // lie about its cost forever. Normalize it (and empty strings) to null.
+      const priceEstimate = rawPrice === NO_PRICE_LABEL ? null : rawPrice;
       return {
         day_number: Math.max(1, Math.floor(Number(item.day_number) || 1)),
         category: item.category && VALID_CATEGORIES.has(item.category) ? item.category : "note",

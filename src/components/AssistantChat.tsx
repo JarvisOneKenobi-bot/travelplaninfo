@@ -10,19 +10,11 @@ import { decodeSseData } from "@/lib/atlas/sse";
 import { buildOnboardingIntro, readGuestPrefs } from "@/lib/guest-prefs";
 import AtlasSmartSearchChip from "./AtlasSmartSearchChip";
 import VoiceInput from "./VoiceInput";
-import FlightCard from "./atlas/FlightCard";
-import HotelCard from "./atlas/HotelCard";
-import DealCard from "./atlas/DealCard";
-import DestinationCard from "./atlas/DestinationCard";
-import ArticleCard from "./atlas/ArticleCard";
-import ActivityCard from "./atlas/ActivityCard";
-import RestaurantCard from "./atlas/RestaurantCard";
+import AssistantMessageBody from "./atlas/AssistantMessageBody";
 import TripResultsModal from "./atlas/TripResultsModal";
-import type { FlightResult, HotelResult, ActivityResult, RestaurantResult, BudgetTier } from "./atlas/types";
-
-// ── Trip tool detection — only these tools trigger the modal ─────────────────
-
-const TRIP_TOOLS = new Set(["search_flights", "search_hotels", "search_activities", "search_restaurants"]);
+import type { FlightResult, BudgetTier } from "./atlas/types";
+import { parseMessageContent } from "./atlas/trip-data";
+import { getTripFlights } from "./atlas/trip-flights-cache";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,9 +49,6 @@ interface TripContext {
 
 interface ModalData {
   flights: FlightResult[];
-  hotels: HotelResult[];
-  activities: ActivityResult[];
-  restaurants: RestaurantResult[];
   tripContext: TripContext;
 }
 
@@ -74,176 +63,7 @@ const QUICK_ACTIONS = [
   { label: "Recommend an article", emoji: "\uD83D\uDCD6", message: "Recommend a travel guide article" },
 ];
 
-// ── Helper: parse tool results from message content ──────────────────────────
-
-interface ToolResult {
-  type: "text" | "tool";
-  toolName?: string;
-  data?: Record<string, unknown>;
-  text?: string;
-}
-
-function parseMessageContent(content: string): ToolResult[] {
-  const parts: ToolResult[] = [];
-  const markerPattern = /\[TOOL:(\w+)\]/g;
-
-  let lastIndex = 0;
-  let match;
-
-  while ((match = markerPattern.exec(content)) !== null) {
-    // Text before this tool marker
-    if (match.index > lastIndex) {
-      const text = content.slice(lastIndex, match.index).trim();
-      if (text) parts.push({ type: "text", text });
-    }
-
-    const toolName = match[1];
-    const jsonStart = match.index + match[0].length;
-
-    // Find matching JSON using brace counting (handles nested objects)
-    if (jsonStart < content.length && content[jsonStart] === "{") {
-      let depth = 0;
-      let jsonEnd = jsonStart;
-      for (let i = jsonStart; i < content.length; i++) {
-        if (content[i] === "{") depth++;
-        else if (content[i] === "}") {
-          depth--;
-          if (depth === 0) { jsonEnd = i + 1; break; }
-        }
-      }
-      const jsonStr = content.slice(jsonStart, jsonEnd);
-      try {
-        const data = JSON.parse(jsonStr);
-        parts.push({ type: "tool", toolName, data });
-      } catch {
-        parts.push({ type: "text", text: match[0] + jsonStr });
-      }
-      lastIndex = jsonEnd;
-      markerPattern.lastIndex = jsonEnd;
-    } else {
-      parts.push({ type: "text", text: match[0] });
-      lastIndex = match.index + match[0].length;
-    }
-  }
-
-  // Remaining text
-  if (lastIndex < content.length) {
-    const text = content.slice(lastIndex).trim();
-    if (text) parts.push({ type: "text", text });
-  }
-
-  return parts.length > 0 ? parts : [{ type: "text", text: content }];
-}
-
-// ── Helpers: parse numeric values from price strings + duration ──────────────
-
-function parsePriceValue(priceStr: string): number {
-  const match = priceStr.replace(/,/g, "").match(/[\d.]+/);
-  return match ? parseFloat(match[0]) : 0;
-}
-
-function parseDurationMinutes(durationStr: string): number {
-  const hMatch = durationStr.match(/(\d+)h/);
-  const mMatch = durationStr.match(/(\d+)m/);
-  return (hMatch ? parseInt(hMatch[1]) * 60 : 0) + (mMatch ? parseInt(mMatch[1]) : 0);
-}
-
-/** Count how many trip-specific tools appear in parsed parts */
-function countTripTools(parts: ToolResult[]): number {
-  const seen = new Set<string>();
-  for (const p of parts) {
-    if (p.type === "tool" && p.toolName && TRIP_TOOLS.has(p.toolName)) {
-      seen.add(p.toolName);
-    }
-  }
-  return seen.size;
-}
-
-/** Extract typed arrays from parsed tool results */
-function extractTripData(parts: ToolResult[]): {
-  flights: FlightResult[];
-  hotels: HotelResult[];
-  activities: ActivityResult[];
-  restaurants: RestaurantResult[];
-} {
-  const flights: FlightResult[] = [];
-  const hotels: HotelResult[] = [];
-  const activities: ActivityResult[] = [];
-  const restaurants: RestaurantResult[] = [];
-
-  for (const p of parts) {
-    if (p.type !== "tool" || !p.data) continue;
-
-    if (p.toolName === "search_flights" && Array.isArray(p.data.flights)) {
-      for (const f of p.data.flights as Record<string, unknown>[]) {
-        const price = String(f.price || "$0");
-        const duration = String(f.duration || "0h 0m");
-        const stops = String(f.stops || "");
-        flights.push({
-          airline: String(f.airline || ""),
-          route: String(f.route || ""),
-          price,
-          price_value: typeof f.price_value === "number" ? f.price_value : parsePriceValue(price),
-          duration,
-          duration_minutes: typeof f.duration_minutes === "number" ? f.duration_minutes : parseDurationMinutes(duration),
-          stops,
-          nonstop: typeof f.nonstop === "boolean" ? f.nonstop : /nonstop/i.test(stops),
-          depart_date: f.depart_date ? String(f.depart_date) : undefined,
-          return_date: f.return_date ? String(f.return_date) : undefined,
-          book_url: String(f.book_url || ""),
-        });
-      }
-    }
-
-    if (p.toolName === "search_hotels" && Array.isArray(p.data.hotels)) {
-      for (const h of p.data.hotels as Record<string, unknown>[]) {
-        const priceNight = String(h.price_night || "$0");
-        hotels.push({
-          name: String(h.name || ""),
-          price_night: priceNight,
-          price_night_value: typeof h.price_night_value === "number" ? h.price_night_value : parsePriceValue(priceNight),
-          total_cost: h.total_cost ? String(h.total_cost) : undefined,
-          rating: typeof h.rating === "number" ? h.rating : 0,
-          tier: (["budget", "mid", "luxury"].includes(String(h.tier)) ? String(h.tier) : "mid") as "budget" | "mid" | "luxury",
-          book_url: String(h.book_url || ""),
-          neighborhood: h.neighborhood ? String(h.neighborhood) : undefined,
-          highlights: Array.isArray(h.highlights) ? (h.highlights as unknown[]).map(String) : undefined,
-        });
-      }
-    }
-
-    if (p.toolName === "search_activities" && Array.isArray(p.data.activities)) {
-      for (const a of p.data.activities as Record<string, unknown>[]) {
-        const price = String(a.price || "$0");
-        activities.push({
-          name: String(a.name || ""),
-          price,
-          price_value: typeof a.price_value === "number" ? a.price_value : parsePriceValue(price),
-          tier: (["budget", "mid", "luxury"].includes(String(a.tier)) ? String(a.tier) : "mid") as "budget" | "mid" | "luxury",
-          interest: String(a.interest || "other"),
-          duration: a.duration ? String(a.duration) : undefined,
-          klook_url: a.klook_url ? String(a.klook_url) : undefined,
-        });
-      }
-    }
-
-    if (p.toolName === "search_restaurants" && Array.isArray(p.data.restaurants)) {
-      for (const r of p.data.restaurants as Record<string, unknown>[]) {
-        restaurants.push({
-          name: String(r.name || ""),
-          cuisine: String(r.cuisine || ""),
-          price_range: String(r.price_range || "$"),
-          neighborhood: String(r.neighborhood || ""),
-          rating: typeof r.rating === "number" ? r.rating : undefined,
-          highlights: Array.isArray(r.highlights) ? (r.highlights as unknown[]).map(String) : [],
-          budget_tier: (["budget", "mid", "luxury"].includes(String(r.budget_tier)) ? String(r.budget_tier) : "mid") as BudgetTier,
-        });
-      }
-    }
-  }
-
-  return { flights, hotels, activities, restaurants };
-}
+// ── Message parsing (parseMessageContent) lives in ./atlas/trip-data ────────
 
 /** Read trip context from the #atlas-trip-context script tag */
 function readTripContext(): TripContext {
@@ -281,189 +101,10 @@ function readTripContext(): TripContext {
   }
 }
 
-/** Get text-only summary from parsed parts (strips tool JSON) */
-function getTextSummary(parts: ToolResult[]): string {
-  return parts
-    .filter((p) => p.type === "text")
-    .map((p) => p.text || "")
-    .join(" ")
-    .trim();
-}
-
-// ── Tool card renderers using dedicated card components ──────────────────────
-
-function ToolResultCards({ toolName, data }: { toolName: string; data: Record<string, unknown> }) {
-  // Contained tool failures (is_error results from executeToolSafely) are
-  // explained by Atlas's own follow-up text — don't render a raw JSON card.
-  if (data.is_error) return null;
-
-  if (toolName === "search_flights" && data.flights) {
-    const flights = data.flights as Array<Record<string, string>>;
-    return (
-      <div className="space-y-2 my-2">
-        {flights.map((f, i) => (
-          <FlightCard key={i} flight={f as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "search_hotels" && data.hotels) {
-    const hotels = data.hotels as Array<Record<string, unknown>>;
-    return (
-      <div className="space-y-2 my-2">
-        {hotels.map((h, i) => (
-          <HotelCard key={i} hotel={h as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "get_deals" && data.deals) {
-    const deals = data.deals as Array<Record<string, unknown>>;
-    return (
-      <div className="space-y-2 my-2">
-        {deals.map((d, i) => (
-          <DealCard key={i} deal={d as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "surprise_me" && data.suggestions) {
-    const suggestions = data.suggestions as Array<Record<string, unknown>>;
-    return (
-      <div className="space-y-2 my-2">
-        {suggestions.map((s, i) => (
-          <DestinationCard key={i} destination={s as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "get_article" && data.articles) {
-    const articles = data.articles as Array<Record<string, string>>;
-    return (
-      <div className="space-y-2 my-2">
-        {articles.map((a, i) => (
-          <ArticleCard key={i} article={a as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "search_activities" && data.activities) {
-    const activities = data.activities as Array<Record<string, string>>;
-    return (
-      <div className="space-y-2 my-2">
-        {activities.map((a, i) => (
-          <ActivityCard key={i} activity={a as never} />
-        ))}
-      </div>
-    );
-  }
-
-  if (toolName === "search_restaurants" && data.restaurants) {
-    const restaurants = data.restaurants as Array<Record<string, unknown>>;
-    return (
-      <div className="space-y-2 my-2">
-        {restaurants.map((r, i) => (
-          <RestaurantCard key={i} restaurant={r as never} />
-        ))}
-      </div>
-    );
-  }
-
-  // Fallback: show raw JSON
-  return (
-    <pre className="text-xs bg-gray-50 rounded p-2 overflow-x-auto my-2">
-      {JSON.stringify(data, null, 2)}
-    </pre>
-  );
-}
-
-// ── Markdown-lite renderer ───────────────────────────────────────────────────
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function renderMarkdownLite(text: string) {
-  // Escape HTML first to prevent XSS — content comes from the LLM, which could
-  // theoretically output raw HTML or be influenced by prompt injection.
-  let html = escapeHtml(text);
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  // Links — only allow http(s) URLs to prevent javascript: protocol injection
-  html = html.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-    '<a href="$2" class="text-orange-600 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>'
-  );
-  // Also handle relative URLs (for TPI article links like /slug/)
-  html = html.replace(
-    /\[([^\]]+)\]\((\/[^)]+)\)/g,
-    '<a href="$2" class="text-orange-600 hover:underline">$1</a>'
-  );
-
-  // Table detection and conversion (before newline→br)
-  const lines = html.split("\n");
-  const result: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    if (lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-      const tableLines: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-        tableLines.push(lines[i].trim());
-        i++;
-      }
-
-      if (tableLines.length >= 2) {
-        const headerCells = tableLines[0].split("|").filter(c => c.trim() !== "").map(c => c.trim());
-
-        let dataStart = 1;
-        if (tableLines[1] && /^\|[\s\-:|]+\|$/.test(tableLines[1])) {
-          dataStart = 2;
-        }
-
-        let tableHtml = '<table class="w-full text-xs border-collapse rounded-lg overflow-hidden my-3">';
-        tableHtml += '<thead><tr class="bg-orange-50">';
-        for (const cell of headerCells) {
-          tableHtml += `<th class="px-3 py-2 text-left font-semibold text-gray-700 border-b border-orange-200">${cell}</th>`;
-        }
-        tableHtml += "</tr></thead><tbody>";
-
-        for (let r = dataStart; r < tableLines.length; r++) {
-          const cells = tableLines[r].split("|").filter(c => c.trim() !== "").map(c => c.trim());
-          const rowClass = (r - dataStart) % 2 === 0 ? "bg-white" : "bg-gray-50";
-          tableHtml += `<tr class="${rowClass}">`;
-          for (const cell of cells) {
-            tableHtml += `<td class="px-3 py-2 text-gray-700 border-b border-gray-100">${cell}</td>`;
-          }
-          tableHtml += "</tr>";
-        }
-        tableHtml += "</tbody></table>";
-        result.push(tableHtml);
-      } else {
-        for (const line of tableLines) {
-          result.push(line + "<br/>");
-        }
-      }
-    } else {
-      result.push(lines[i] + "<br/>");
-      i++;
-    }
-  }
-
-  html = result.join("");
-  // Remove trailing br
-  html = html.replace(/(<br\/>)+$/, "");
-  return html;
-}
+// ── Message rendering helpers moved to src/components/atlas/ (Task 6) ────────
+// getTextSummary + extractTripData → ./atlas/trip-data
+// ToolResultCards → ./atlas/ToolResultCards.tsx
+// escapeHtml + renderMarkdownLite → ./atlas/markdown-lite.ts
 
 // ── Auto-search prompt builder (extracted from former 800ms auto-trigger) ────
 // Pure function — no React, no side effects.
@@ -498,7 +139,7 @@ function buildAutoSearchPrompt(ctx: {
     const howLong = ctx.tripLength ? lengthLabels[ctx.tripLength] || ctx.tripLength : "flexible duration";
     prompt += `. I'm flexible on dates — thinking ${when}, for ${howLong}`;
   }
-  prompt += ". Search flights, hotels, and activities for me.";
+  prompt += ". Search flights for me.";
   return prompt;
 }
 
@@ -523,6 +164,22 @@ export default function AssistantChat() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalData, setModalData] = useState<ModalData | null>(null);
+  const [modalSeq, setModalSeq] = useState(0);
+  // Stable close handler: TripResultsModal's focus-trap effect keys on isOpen
+  // alone, so onClose must not change identity on every AssistantChat render
+  // (it would make the modal restash its opener and drag focus back to Close
+  // on each parent re-render).
+  const closeModal = useCallback(() => setModalOpen(false), []);
+
+  // Single open path for the results window (every message's Add-to-itinerary
+  // button funnels here): bump the modal instance key FIRST — the remount
+  // destroys any selection/day state held by the previously mounted
+  // TripResultsModal — then set the flights and open.
+  const openResults = useCallback((flights: FlightResult[]) => {
+    setModalSeq((n) => n + 1);
+    setModalData({ flights, tripContext: readTripContext() });
+    setModalOpen(true);
+  }, []);
 
   // ── Trip context for trigger governance ──────────────────────────────────
   const [tripCtx, setTripCtx] = useState<TripContext>(() => ({
@@ -955,6 +612,19 @@ export default function AssistantChat() {
     await createSession();
   }, [createSession]);
 
+  // ── Sidebar data: the most recent assistant message carrying flights ──────
+  // Memoized on messages; getTripFlights shares the extraction cache with the
+  // message bodies, so no per-keystroke re-parsing happens here either.
+  const sidebarFlights = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg || msg.role !== "assistant") continue;
+      const flights = getTripFlights(msg.content);
+      if (flights.length > 0) return flights;
+    }
+    return [];
+  }, [messages]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const showQuickActions = messages.length === 0 || (!isLoading && messages.length > 0);
@@ -1060,122 +730,34 @@ export default function AssistantChat() {
               </div>
             )}
 
-            {messages.map((msg) => {
-              // ── Multi-tool trip detection (assistant messages only) ──
-              const parsed = msg.role === "assistant" ? parseMessageContent(msg.content) : [];
-              const tripToolCount = msg.role === "assistant" ? countTripTools(parsed) : 0;
-              const isMultiTripTool = tripToolCount >= 2;
-
-              return (
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={msg.role === "user" ? "flex justify-end" : "flex justify-start items-start gap-2"}
+              >
+                {msg.role === "assistant" && (
+                  <img src="/images/atlas-avatar.png" alt="" className="w-6 h-6 rounded-full shrink-0 mt-1" />
+                )}
                 <div
-                  key={msg.id}
-                  className={msg.role === "user" ? "flex justify-end" : "flex justify-start items-start gap-2"}
+                  className={[
+                    "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm",
+                    msg.role === "user"
+                      ? "bg-orange-500 text-white rounded-br-md"
+                      : "bg-gray-100 text-gray-800 rounded-bl-md",
+                  ].join(" ")}
                 >
-                  {msg.role === "assistant" && (
-                    <img src="/images/atlas-avatar.png" alt="" className="w-6 h-6 rounded-full shrink-0 mt-1" />
+                  {msg.role === "assistant" ? (
+                    <AssistantMessageBody
+                      content={msg.content}
+                      isStreaming={!!msg.isStreaming}
+                      onOpenResults={openResults}
+                    />
+                  ) : (
+                    msg.content
                   )}
-                  <div
-                    className={[
-                      "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm",
-                      msg.role === "user"
-                        ? "bg-orange-500 text-white rounded-br-md"
-                        : "bg-gray-100 text-gray-800 rounded-bl-md",
-                    ].join(" ")}
-                  >
-                    {msg.role === "assistant" ? (
-                      <div>
-                        {isMultiTripTool ? (
-                          <>
-                            {/* Show text summary only (strip tool JSON) */}
-                            {(() => {
-                              const summary = getTextSummary(parsed);
-                              return summary ? (
-                                <span
-                                  dangerouslySetInnerHTML={{
-                                    __html: renderMarkdownLite(summary),
-                                  }}
-                                />
-                              ) : null;
-                            })()}
-                            {/* Render non-trip tool results inline as before */}
-                            {parsed
-                              .filter(
-                                (p) =>
-                                  p.type === "tool" &&
-                                  p.toolName &&
-                                  !TRIP_TOOLS.has(p.toolName) &&
-                                  p.data
-                              )
-                              .map((part, i) => (
-                                <ToolResultCards
-                                  key={`nontool-${i}`}
-                                  toolName={part.toolName!}
-                                  data={part.data!}
-                                />
-                              ))}
-                            {/* "View Full Plan" button — only when streaming is complete */}
-                            {!msg.isStreaming && (
-                              <button
-                                onClick={() => {
-                                  const tripData = extractTripData(parsed);
-                                  const ctx = readTripContext();
-                                  setModalData({
-                                    flights: tripData.flights,
-                                    hotels: tripData.hotels,
-                                    activities: tripData.activities,
-                                    restaurants: tripData.restaurants,
-                                    tripContext: ctx,
-                                  });
-                                  setModalOpen(true);
-                                }}
-                                className="mt-3 w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors"
-                              >
-                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                                  <line x1="3" y1="9" x2="21" y2="9" />
-                                  <line x1="9" y1="21" x2="9" y2="9" />
-                                </svg>
-                                View Full Plan
-                              </button>
-                            )}
-                          </>
-                        ) : (
-                          /* Standard rendering: inline cards for single-tool or non-trip tools */
-                          parsed.map((part, i) => {
-                            if (part.type === "tool" && part.toolName && part.data) {
-                              return (
-                                <ToolResultCards
-                                  key={i}
-                                  toolName={part.toolName}
-                                  data={part.data}
-                                />
-                              );
-                            }
-                            return (
-                              <span
-                                key={i}
-                                dangerouslySetInnerHTML={{
-                                  __html: renderMarkdownLite(part.text || ""),
-                                }}
-                              />
-                            );
-                          })
-                        )}
-                        {msg.isStreaming && (
-                          <span className="inline-flex gap-1 ml-1">
-                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      msg.content
-                    )}
-                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
 
             <div ref={messagesEndRef} />
           </div>
@@ -1332,119 +914,34 @@ export default function AssistantChat() {
                 </div>
               )}
 
-              {messages.map((msg) => {
-                const parsed = msg.role === "assistant" ? parseMessageContent(msg.content) : [];
-                const tripToolCount = msg.role === "assistant" ? countTripTools(parsed) : 0;
-                const isMultiTripTool = tripToolCount >= 2;
-
-                return (
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className="flex justify-start items-start gap-3 w-full"
+                >
+                  {msg.role === "assistant" && (
+                    <img src="/images/atlas-avatar.png" alt="" className="w-8 h-8 rounded-full shrink-0 mt-1 ring-1 ring-orange-200" />
+                  )}
                   <div
-                    key={msg.id}
-                    className="flex justify-start items-start gap-3 w-full"
+                    className={[
+                      "rounded-2xl px-6 py-4 text-sm leading-relaxed w-full",
+                      msg.role === "user"
+                        ? "bg-orange-500 text-white rounded-lg mx-[5%]"
+                        : "bg-white text-gray-900 rounded-bl-md shadow-sm border border-gray-200",
+                    ].join(" ")}
                   >
-                    {msg.role === "assistant" && (
-                      <img src="/images/atlas-avatar.png" alt="" className="w-8 h-8 rounded-full shrink-0 mt-1 ring-1 ring-orange-200" />
+                    {msg.role === "assistant" ? (
+                      <AssistantMessageBody
+                        content={msg.content}
+                        isStreaming={!!msg.isStreaming}
+                        onOpenResults={openResults}
+                      />
+                    ) : (
+                      msg.content
                     )}
-                    <div
-                      className={[
-                        "rounded-2xl px-6 py-4 text-sm leading-relaxed w-full",
-                        msg.role === "user"
-                          ? "bg-orange-500 text-white rounded-lg mx-[5%]"
-                          : "bg-white text-gray-900 rounded-bl-md shadow-sm border border-gray-200",
-                      ].join(" ")}
-                    >
-                      {msg.role === "assistant" ? (
-                        <div>
-                          {isMultiTripTool ? (
-                            <>
-                              {(() => {
-                                const summary = getTextSummary(parsed);
-                                return summary ? (
-                                  <span
-                                    dangerouslySetInnerHTML={{
-                                      __html: renderMarkdownLite(summary),
-                                    }}
-                                  />
-                                ) : null;
-                              })()}
-
-
-                              {parsed
-                                .filter(
-                                  (p) =>
-                                    p.type === "tool" &&
-                                    p.toolName &&
-                                    !TRIP_TOOLS.has(p.toolName) &&
-                                    p.data
-                                )
-                                .map((part, i) => (
-                                  <ToolResultCards
-                                    key={`nontool-${i}`}
-                                    toolName={part.toolName!}
-                                    data={part.data!}
-                                  />
-                                ))}
-                              {!msg.isStreaming && (
-                                <button
-                                  onClick={() => {
-                                    const tripData = extractTripData(parsed);
-                                    const ctx = readTripContext();
-                                    setModalData({
-                                      flights: tripData.flights,
-                                      hotels: tripData.hotels,
-                                      activities: tripData.activities,
-                                      restaurants: tripData.restaurants,
-                                      tripContext: ctx,
-                                    });
-                                    setModalOpen(true);
-                                  }}
-                                  className="mt-4 w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-colors"
-                                >
-                                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                                    <line x1="3" y1="9" x2="21" y2="9" />
-                                    <line x1="9" y1="21" x2="9" y2="9" />
-                                  </svg>
-                                  View Full Plan
-                                </button>
-                              )}
-                            </>
-                          ) : (
-                            parsed.map((part, i) => {
-                              if (part.type === "tool" && part.toolName && part.data) {
-                                return (
-                                  <ToolResultCards
-                                    key={i}
-                                    toolName={part.toolName}
-                                    data={part.data}
-                                  />
-                                );
-                              }
-                              return (
-                                <span
-                                  key={i}
-                                  dangerouslySetInnerHTML={{
-                                    __html: renderMarkdownLite(part.text || ""),
-                                  }}
-                                />
-                              );
-                            })
-                          )}
-                          {msg.isStreaming && (
-                            <span className="inline-flex gap-1 ml-1">
-                              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        msg.content
-                      )}
-                    </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
 
               <div ref={messagesEndRef} />
               </div>
@@ -1496,94 +993,26 @@ export default function AssistantChat() {
 
             {/* Right Sidebar: Trip Cards */}
             <div className="w-96 border-l border-gray-200 overflow-y-auto bg-gray-50 p-5 flex flex-col gap-4 shrink-0">
-              {(() => {
-                let allTrips = { flights: [] as FlightResult[], hotels: [] as HotelResult[], activities: [] as ActivityResult[], restaurants: [] as RestaurantResult[] };
-                for (const msg of [...messages].reverse()) {
-                  if (msg.role === "assistant") {
-                    const parsed = parseMessageContent(msg.content);
-                    const tripData = extractTripData(parsed);
-                    if (tripData.flights.length > 0 || tripData.hotels.length > 0 || tripData.activities.length > 0 || tripData.restaurants.length > 0) {
-                      allTrips = tripData;
-                      break;
-                    }
-                  }
-                }
-
-                if (allTrips.flights.length === 0 && allTrips.hotels.length === 0 && allTrips.activities.length === 0 && allTrips.restaurants.length === 0) {
-                  return (
-                    <div className="text-center text-gray-400 text-sm py-12">
-                      <p className="text-3xl mb-3">📋</p>
-                      <p>Trip details will appear here</p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <>
-                    {allTrips.flights.length > 0 && (
-                      <div>
-                        <h3 className="font-bold text-gray-900 mb-3">✈️ Flights ({allTrips.flights.length})</h3>
-                        <div className="space-y-2">
-                          {allTrips.flights.map((f, i) => (
-                            <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
-                              <p className="font-bold text-orange-600 text-lg">{f.price}</p>
-                              {f.airline && <p className="text-xs text-gray-600 font-medium">{f.airline}</p>}
-                              <p className="text-xs text-gray-500 mt-1">{f.route}</p>
-                              {f.nonstop && <span className="text-xs bg-green-100 text-green-700 rounded px-2 py-0.5 inline-block mt-1">Nonstop</span>}
-                            </div>
-                          ))}
-                        </div>
+              {sidebarFlights.length === 0 ? (
+                <div className="text-center text-gray-400 text-sm py-12">
+                  <p className="text-3xl mb-3">📋</p>
+                  <p>Trip details will appear here</p>
+                </div>
+              ) : (
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-3">✈️ Flights ({sidebarFlights.length})</h3>
+                  <div className="space-y-2">
+                    {sidebarFlights.map((f, i) => (
+                      <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
+                        <p className="font-bold text-orange-600 text-lg">{f.price}</p>
+                        {f.airline && <p className="text-xs text-gray-600 font-medium">{f.airline}</p>}
+                        <p className="text-xs text-gray-500 mt-1">{f.route}</p>
+                        {f.nonstop && <span className="text-xs bg-green-100 text-green-700 rounded px-2 py-0.5 inline-block mt-1">Nonstop</span>}
                       </div>
-                    )}
-
-                    {allTrips.hotels.length > 0 && (
-                      <div>
-                        <h3 className="font-bold text-gray-900 mb-3">🏨 Hotels ({allTrips.hotels.length})</h3>
-                        <div className="space-y-2">
-                          {allTrips.hotels.map((h, i) => (
-                            <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
-                              <p className="font-bold text-orange-600 text-lg">{h.price_night}</p>
-                              <p className="text-xs font-medium text-gray-900">{h.name}</p>
-                              <p className="text-xs text-gray-500 mt-1">{h.neighborhood || ""}</p>
-                              {h.rating > 0 && <p className="text-xs text-amber-600 mt-1">⭐ {h.rating.toFixed(1)}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {allTrips.activities.length > 0 && (
-                      <div>
-                        <h3 className="font-bold text-gray-900 mb-3">🎯 Activities ({allTrips.activities.length})</h3>
-                        <div className="space-y-2">
-                          {allTrips.activities.map((a, i) => (
-                            <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
-                              <p className="font-bold text-orange-600 text-lg">{a.price}</p>
-                              <p className="text-xs font-medium text-gray-900">{a.name}</p>
-                              <p className="text-xs text-gray-500 mt-1">{a.duration || ""}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {allTrips.restaurants.length > 0 && (
-                      <div>
-                        <h3 className="font-bold text-gray-900 mb-3">🍽️ Restaurants ({allTrips.restaurants.length})</h3>
-                        <div className="space-y-2">
-                          {allTrips.restaurants.map((r, i) => (
-                            <div key={i} className="bg-white rounded-lg border border-gray-200 p-3">
-                              <p className="text-xs font-medium text-gray-900">{r.name}</p>
-                              <p className="text-xs text-gray-500">{r.cuisine} · {r.price_range}</p>
-                              {r.rating && <p className="text-xs text-amber-600 mt-1">⭐ {r.rating.toFixed(1)}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -1592,16 +1021,13 @@ export default function AssistantChat() {
       {/* Trip Results Modal */}
       {modalData && (
         <TripResultsModal
+          key={modalSeq}
           isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           destination={modalData.tripContext.destination}
           dates={modalData.tripContext.dates}
           adults={modalData.tripContext.adults}
           flights={modalData.flights}
-          hotels={modalData.hotels}
-          activities={modalData.activities}
-          restaurants={modalData?.restaurants || []}
-          budgetTier={modalData.tripContext.budgetTier}
           tripId={modalData.tripContext.tripId}
         />
       )}

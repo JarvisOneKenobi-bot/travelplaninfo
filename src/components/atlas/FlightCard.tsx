@@ -18,7 +18,7 @@ export default function FlightCard({ flight }: { flight: FlightData }) {
   const flightMeta = [flight.route, flight.duration, flight.stops].filter(Boolean).join(" · ");
   const airline = flight.airline.trim();
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 hover:shadow-md transition-shadow">
+    <div data-testid="flight-card" className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
           {/* Airline logo placeholder + name */}

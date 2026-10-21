@@ -9,10 +9,10 @@ import {
   buildAviasalesLink,
   FAILURE_REASONS,
   INVALID_IATA_REASON,
-  NO_PRICE_LABEL,
   type TpFailure,
   type TpFlightItem,
 } from "./travelpayouts-client";
+import { NO_PRICE_LABEL } from "./labels";
 import { DESTINATION_VIBES } from "./destination-vibes";
 import { resolveCityName } from "./city-names";
 import { resolveMetro } from "./metro";

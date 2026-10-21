@@ -1,0 +1,162 @@
+/**
+ * Data-path guard for the Atlas results window.
+ *
+ * `extractTripData` feeds BOTH the `hasTripResults` gate that opens the results
+ * window and the numbers the window renders. The producer
+ * (`travelpayouts-client.ts`) emits `price: "—"` (NO_PRICE_LABEL) whenever the
+ * upstream price is null or <= 0, and `duration: ""` unconditionally — so the
+ * "unknown" paths here are the normal case, not an edge case.
+ *
+ * The rule this file pins: an unknown price or duration must never be turned
+ * into a number that looks like real data. $0 sorts first and wins the
+ * "Best Price" badge; 0 minutes sorts first as the shortest flight.
+ */
+import { describe, expect, it } from "vitest";
+import { extractTripData, parseDurationMinutes } from "./atlas/trip-data";
+import { PRICE_UNKNOWN, DURATION_UNKNOWN, NO_PRICE_LABEL } from "./atlas/types";
+
+function flightPart(flights: unknown[]) {
+  return [{ type: "tool" as const, toolName: "search_flights", data: { flights } }];
+}
+
+describe("extractTripData — flight results", () => {
+  it("parses a priced flight into a sortable numeric price", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "Delta", route: "MIA → JFK", price: "$166 round-trip", stops: "Nonstop", book_url: "u" }])
+    );
+
+    expect(flights).toHaveLength(1);
+    expect(flights[0].price).toBe("$166 round-trip");
+    expect(flights[0].price_value).toBe(166);
+  });
+
+  it("never turns an unknown price into $0", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "Delta", route: "MIA → JFK", price: NO_PRICE_LABEL, stops: "", book_url: "u" }])
+    );
+
+    expect(flights[0].price).toBe(NO_PRICE_LABEL);
+    expect(flights[0].price_value).not.toBe(0);
+    expect(flights[0].price_value).toBe(PRICE_UNKNOWN);
+  });
+
+  it("never invents a price when the field is missing entirely", () => {
+    const { flights } = extractTripData(flightPart([{ airline: "Delta", route: "MIA → JFK", book_url: "u" }]));
+
+    expect(flights[0].price).not.toBe("$0");
+    // the producer's own no-price label, not a second wording invented here
+    expect(flights[0].price).toBe(NO_PRICE_LABEL);
+    expect(flights[0].price_value).toBe(PRICE_UNKNOWN);
+  });
+
+  it("sorts an unpriced flight after every priced one", () => {
+    const { flights } = extractTripData(
+      flightPart([
+        { airline: "A", route: "r", price: NO_PRICE_LABEL, book_url: "u" },
+        { airline: "B", route: "r", price: "$900", book_url: "u" },
+        { airline: "C", route: "r", price: "$100", book_url: "u" },
+      ])
+    );
+    const byPrice = [...flights].sort((a, b) => a.price_value - b.price_value);
+
+    expect(byPrice.map((f) => f.airline)).toEqual(["C", "B", "A"]);
+    // the cheapest REAL price, not the unpriced row
+    const priced = flights.filter((f) => f.price_value < PRICE_UNKNOWN);
+    expect(Math.min(...priced.map((f) => f.price_value))).toBe(100);
+  });
+
+  it("never invents a duration and sorts an unknown duration last", () => {
+    // the live producer sends duration: "" for every flight
+    const { flights } = extractTripData(
+      flightPart([
+        { airline: "A", route: "r", price: "$100", duration: "", book_url: "u" },
+        { airline: "B", route: "r", price: "$200", duration: "3h 15m", book_url: "u" },
+      ])
+    );
+
+    // An unknown duration stays empty so joinNonEmpty drops it from card text
+    // and from the itinerary item description; DURATION_UNKNOWN carries the fact
+    // for sorting. Rendering a "duration unavailable" string on every row (the
+    // producer always sends "") was noise, and it was persisted into trip_items.
+    expect(flights[0].duration).toBe("");
+    expect(flights[0].duration).not.toBe("0h 0m");
+    expect(flights[0].duration_minutes).toBe(DURATION_UNKNOWN);
+    expect(flights[1].duration_minutes).toBe(195);
+    expect(flights[1].duration_minutes).toBeLessThan(flights[0].duration_minutes);
+  });
+
+  it("returns no flights for a no_data response, so the results window stays shut", () => {
+    const { flights } = extractTripData([
+      { type: "tool", toolName: "search_flights", data: { flights: [], no_data: true } },
+    ]);
+
+    expect(flights).toEqual([]);
+  });
+
+  it("returns no flights for a contained tool error", () => {
+    const { flights } = extractTripData([
+      { type: "tool", toolName: "search_flights", data: { is_error: true, error: "upstream 503" } },
+    ]);
+
+    expect(flights).toEqual([]);
+  });
+
+  it("ignores results from tools that are not in the live registry", () => {
+    const { flights } = extractTripData([
+      { type: "text", text: "here you go" },
+      { type: "tool", toolName: "get_deals", data: { deals: [{ price: "$99" }] } },
+    ]);
+
+    expect(flights).toEqual([]);
+  });
+
+  // The producer (or a future tool) can emit duration_minutes: 0 — which would
+  // sort the row FIRST as the "shortest flight", exactly like $0 sorts first.
+  it("guards a producer duration_minutes of 0 into DURATION_UNKNOWN", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "A", route: "r", price: "$100", duration_minutes: 0, book_url: "u" }])
+    );
+
+    expect(flights[0].duration_minutes).toBe(DURATION_UNKNOWN);
+  });
+
+  it("guards a producer duration_minutes of NaN into DURATION_UNKNOWN", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "A", route: "r", price: "$100", duration_minutes: NaN, book_url: "u" }])
+    );
+
+    expect(flights[0].duration_minutes).toBe(DURATION_UNKNOWN);
+  });
+
+  it("keeps a real positive duration_minutes verbatim", () => {
+    const { flights } = extractTripData(
+      flightPart([{ airline: "A", route: "r", price: "$100", duration_minutes: 425, book_url: "u" }])
+    );
+
+    expect(flights[0].duration_minutes).toBe(425);
+  });
+});
+
+describe("parseDurationMinutes", () => {
+  it("parses ISO-8601 PT durations, case-insensitively", () => {
+    expect(parseDurationMinutes("PT5H30M")).toBe(330);
+    expect(parseDurationMinutes("pt5h30m")).toBe(330);
+  });
+
+  it("parses the compact h/m forms", () => {
+    expect(parseDurationMinutes("5h 30m")).toBe(330);
+    expect(parseDurationMinutes("5h")).toBe(300);
+    expect(parseDurationMinutes("45m")).toBe(45);
+  });
+
+  it("parses the verbose hrs/mins forms, case-insensitively", () => {
+    expect(parseDurationMinutes("5 hrs")).toBe(300);
+    expect(parseDurationMinutes("5 hrs 30 mins")).toBe(330);
+  });
+
+  it("returns DURATION_UNKNOWN when nothing parses or the total is <= 0", () => {
+    expect(parseDurationMinutes("soon")).toBe(DURATION_UNKNOWN);
+    expect(parseDurationMinutes("")).toBe(DURATION_UNKNOWN);
+    expect(parseDurationMinutes("0h 0m")).toBe(DURATION_UNKNOWN);
+  });
+});

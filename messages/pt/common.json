@@ -358,7 +358,6 @@
     "bubblePlannerIntro": "Oi! Sou o Atlas, seu concierge de viagens. Precisa de ajuda para planejar?",
     "bubblePlannerDestination": "Não sabe para onde ir? Me diga que tipo de vibe você está procurando",
     "bubbleItineraryEmpty": "Seu itinerário parece vazio — quer que eu sugira algumas atividades?",
-    "bubbleItineraryIdle": "Precisa de ajuda? Posso pesquisar voos, hotéis ou atividades para você",
     "bubbleItineraryInterests": "Toque no microfone e me diga o que você curte — é mais rápido!"
   },
   "help": {
@@ -511,7 +510,7 @@
     "fromAirport": "de {code}",
     "editTrip": "Editar",
     "atlasReadyTitle": "Atlas pode planejar {destination} para você.",
-    "atlasReadyBody": "Toque no painel de chat abaixo para buscar voos, hotéis e atividades — ou adicione itens manualmente."
+    "atlasReadyBody": "Toque no painel de chat abaixo para buscar voos em tempo real — ou adicione itens manualmente."
   },
   "contextStrip": {
     "departingFrom": "de {origin}",
@@ -594,7 +593,7 @@
   },
   "atlasSmartSearch": {
     "ariaLabel": "Pesquisa inteligente do Atlas",
-    "prompt": "Posso pesquisar voos, hotéis e atividades para {destination}.",
+    "prompt": "Posso pesquisar voos em tempo real para {destination} e indicar guias para o restante.",
     "start": "Iniciar pesquisa inteligente",
     "notYet": "Agora não"
   },

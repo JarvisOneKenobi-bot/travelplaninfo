@@ -44,6 +44,18 @@ const SURPRISE_PATH_FILES = [
   "src/lib/atlas/city-names.ts",
   "src/lib/atlas/destination-vibes.ts",
   "src/lib/atlas/vibe-preflight.ts",
+  // The chat renders every tool result and is where fabricated prices/durations
+  // have twice been introduced; the dedicated describe below adds its own pins.
+  "src/components/AssistantChat.tsx",
+  // Task 6: the chat's trip/tool rendering modules moved out of
+  // AssistantChat.tsx — the fabricated-literal scan follows the code.
+  "src/components/atlas/AssistantMessageBody.tsx",
+  "src/components/atlas/ToolResultCards.tsx",
+  "src/components/atlas/markdown-lite.ts",
+  "src/components/atlas/trip-flights-cache.ts",
+  // Task 6c: parseMessageContent + getTextSummary moved out of
+  // AssistantChat.tsx into trip-data.ts — the scan follows the code.
+  "src/components/atlas/trip-data.ts",
 ];
 
 const BANNED_SUBSTRINGS = [
@@ -165,5 +177,65 @@ describe("dead entry-system stays dead", () => {
       .map(productSourcePath);
 
     expect(offenders, "rejected entry-system components must not reappear").toEqual([]);
+  });
+});
+
+describe("AssistantChat fabrication tripwire", () => {
+  const file = "src/components/AssistantChat.tsx";
+  const content = readFileSync(resolve(process.cwd(), file), "utf-8");
+
+  it("never substitutes a made-up flight duration", () => {
+    expect(content).not.toContain('"0h 0m"');
+  });
+
+  it("passes key={modalSeq} to the results modal", () => {
+    // TripResultsModal.test.tsx proves, behaviorally, that a key change clears
+    // selection. This stays a PROP-WIRING check: AssistantChat still owns the
+    // modalSeq state and must supply the modal's key (AssistantMessageBody
+    // renders message bodies only, not the modal).
+    expect(content).toMatch(/key=\{modalSeq\}/);
+  });
+
+  it("keeps the parent-owned reset pipeline: openResults bumps modalSeq", () => {
+    // The reset guarantee rests on openResults bumping the modal instance key
+    // BEFORE opening — the same cadence TripResultsModal.test.tsx pins at the
+    // modal contract level. Removing the bump must fail here (and the
+    // AssistantChat reset test, behaviorally).
+    expect(content).toMatch(/openResults = useCallback\(/);
+    expect(content).toMatch(/setModalSeq\(\(n\) => n \+ 1\)/);
+  });
+});
+
+// Task 6 relocated the chat's trip rendering — the trip-tools gate, the flight
+// card body, the extraction cache — out of AssistantChat.tsx into
+// src/components/atlas/. The guard follows the code: the live-tool set is
+// pinned in the module that now owns it, and every relocated module is scanned
+// for the removed tool surface. readFileSync fails closed: delete or rename a
+// guarded module and the scan errors instead of passing vacuously.
+const TRIP_RENDER_MODULES = [
+  "src/components/AssistantChat.tsx",
+  "src/components/atlas/AssistantMessageBody.tsx",
+  "src/components/atlas/ToolResultCards.tsx",
+  "src/components/atlas/markdown-lite.ts",
+  "src/components/atlas/trip-flights-cache.ts",
+  // Task 6c: owns parseMessageContent (the [TOOL:…] parser the tool gate and
+  // both consumers run through) — the live-tools scan follows the code.
+  "src/components/atlas/trip-data.ts",
+];
+
+describe("relocated AssistantChat trip-render modules", () => {
+  it("the module owning the trip-tools gate declares the exact live set", () => {
+    const owner = "src/components/atlas/AssistantMessageBody.tsx";
+    const content = readFileSync(resolve(process.cwd(), owner), "utf-8");
+
+    expect(content).toMatch(/const TRIP_TOOLS = new Set\(\["search_flights"\]\)/);
+  });
+
+  it.each(TRIP_RENDER_MODULES)("%s references only live tools", (file) => {
+    const content = readFileSync(resolve(process.cwd(), file), "utf-8");
+
+    for (const dead of ["search_hotels", "search_activities", "search_restaurants"]) {
+      expect(content, `${file} still references ${dead}`).not.toContain(dead);
+    }
   });
 });
