@@ -10,10 +10,10 @@ Change nothing else (keep indentation and trailing comma).
 1. `git diff --stat` shows exactly 6 files, 1 insertion + 1 deletion each.
 2. `grep -n '"flightsDesc"' messages/*/common.json` shows Aviasales in all six.
 3. JSON validity: `node -e` JSON.parse each of the six files.
-4. Key parity: every locale still has the same key set as `en` (`flightsDesc` present in all).
+4. Key sets unchanged: for each locale, flattened key set from `git show HEAD:messages/<loc>/common.json` equals the working-tree one (the edit touches values only). Plus `affiliateRecommendations` namespace has identical keys across all 6 locales. Do NOT require full parity with `en`: `de` already lacks the `contextStrip` namespace (pre-existing, out of scope).
 5. `npx eslint .` and `npm run test:unit` pass (report counts; note pre-existing failures vs. baseline on `main`).
 6. Old strings gone: `grep -rnE "Compare hundreds of airlines for the best|cientos de aerolíneas para|centenas de companhias aéreas pela|compagnies aériennes pour|compagnie aeree per|Hunderte Airlines vergleichen" src tests messages` returns nothing.
 7. `npx vitest run src/test/no-fabricated-claims.test.ts src/lib/help-content.guard.test.ts` passes (guards that scan this namespace).
 
-## Task 3: commit locally
+## Task 3: commit locally (done by the main session AFTER Opus post-review and Task 2 pass; the Step-4 orchestrator/GLM leave the diff uncommitted)
 `copy(i18n): attribute flightsDesc to Aviasales (honesty audit 2026-07-17)`; do not push.
