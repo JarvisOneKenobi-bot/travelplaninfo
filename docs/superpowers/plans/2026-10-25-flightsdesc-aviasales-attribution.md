@@ -12,7 +12,8 @@ Change nothing else (keep indentation and trailing comma).
 3. JSON validity: `node -e` JSON.parse each of the six files.
 4. Key parity: every locale still has the same key set as `en` (`flightsDesc` present in all).
 5. `npx eslint .` and `npm run test:unit` pass (report counts; note pre-existing failures vs. baseline on `main`).
-6. `grep -rn "Compare hundreds of airlines for the best" src tests messages` returns nothing.
+6. Old strings gone: `grep -rnE "Compare hundreds of airlines for the best|cientos de aerolíneas para|centenas de companhias aéreas pela|compagnies aériennes pour|compagnie aeree per|Hunderte Airlines vergleichen" src tests messages` returns nothing.
+7. `npx vitest run src/test/no-fabricated-claims.test.ts src/lib/help-content.guard.test.ts` passes (guards that scan this namespace).
 
 ## Task 3: commit locally
 `copy(i18n): attribute flightsDesc to Aviasales (honesty audit 2026-07-17)`; do not push.

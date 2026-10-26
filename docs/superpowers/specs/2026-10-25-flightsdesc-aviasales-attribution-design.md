@@ -15,19 +15,21 @@ for that PR).
 | locale | new text |
 |---|---|
 | en | Compare hundreds of airlines on Aviasales for the best fare. |
-| pt | Compare centenas de companhias aéreas na Aviasales pela melhor tarifa. |
+| pt | Compare centenas de companhias aéreas no Aviasales pela melhor tarifa. |
 | es | Compara cientos de aerolíneas en Aviasales para la mejor tarifa. |
 | fr | Comparez des centaines de compagnies aériennes sur Aviasales pour le meilleur tarif. |
 | it | Confronta centinaia di compagnie aeree su Aviasales per la tariffa migliore. |
 | de | Hunderte Airlines auf Aviasales vergleichen für den besten Preis. |
 
-Translations are the implementer's-call wording: each keeps the existing sentence and inserts the brand with that language's
+pt uses masculine "no Aviasales" to match the existing `bookOnAviasales` ("Reservar no Aviasales") in the same file (Opus plan review). Translations are the implementer's-call wording: each keeps the existing sentence and inserts the brand with that language's
 preposition. Native-speaker review is not done.
 
 ## Non-goals
 - `placeholderFlightDesc` (audit row proposes attribution too) — separate string, not requested.
 - `ArticleAffiliateCTA.tsx:60` ("…airlines and agencies in one search") — different surface and string.
 - Any other audit row (cars, hotels, deal alerts).
+- Itinerary items users saved earlier keep the old description text (`addToItinerary` stores `rec.description`); harmless, no migration.
+- Pinning `flightsDesc` in `src/test/no-fabricated-claims.test.ts` (like `APPROVED_CRUISES_DESC`) is possible future hardening; separate spec.
 
 ## Constraints
 - Only `flightsDesc`; the key must stay in the same position in every file; JSON stays valid; no other line changes.
